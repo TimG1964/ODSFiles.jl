@@ -1,0 +1,54 @@
+using ODSFiles
+using Test
+
+const SheetCore = ODSFiles.SheetCore
+const DATA = joinpath(@__DIR__, "data")
+
+@testset "ODSFiles" begin
+    @testset "SheetCore" begin
+        @testset "references" begin
+            include("core/test_references.jl")
+        end
+        @testset "ranges" begin
+            include("core/test_ranges.jl")
+        end
+        @testset "reference styles" begin
+            include("core/test_refstyles.jl")
+        end
+        @testset "number formats" begin
+            include("core/test_numfmt.jl")
+        end
+        @testset "tables, colours, widths" begin
+            include("core/test_misc.jl")
+        end
+    end
+    @testset "container" begin
+        include("test_container.jl")
+    end
+    @testset "read model" begin
+        @testset "values" begin
+            include("model/test_values.jl")
+        end
+        @testset "workbook" begin
+            include("model/test_workbook.jl")
+        end
+        @testset "tables" begin
+            include("model/test_tables.jl")
+        end
+    end
+    @testset "formulas" begin
+        include("formula/test_openformula.jl")
+    end
+    @testset "write" begin
+        include("write/test_write.jl")
+    end
+    @testset "phase 3 (speed)" begin
+        include("test_phase3.jl")
+    end
+    @testset "public API only" begin
+        include("test_public_api.jl")
+    end
+    @testset "Aqua" begin
+        include("test_aqua.jl")
+    end
+end

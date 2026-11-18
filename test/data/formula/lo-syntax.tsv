@@ -1,0 +1,48 @@
+label	input	lo_stored	lo_ui
+plain ref	of:=[.A1]	of:=[.A1]	=A1
+abs mixes	of:=[.$A1]+[.A$1]+[.$A$1]	of:=[.$A1]+[.A$1]+[.$A$1]	=$A1+A$1+$A$1
+range	of:=SUM([.A1:.B2])	of:=SUM([.A1:.B2])	=SUM(A1:B2)
+range abs	of:=SUM([.$A$1:.$B$2])	of:=SUM([.$A$1:.$B$2])	=SUM($A$1:$B$2)
+other sheet	of:=[Plain.A1]	of:=[Plain.A1]	=Plain.A1
+other sheet abs	of:=[$Plain.$A$1]	of:=[$Plain.$A$1]	=$Plain.$A$1
+quoted sheet	of:=['My sheet'.B2]	of:=['My sheet'.B2]	='My sheet'.B2
+apostrophe sheet	of:=[$'It''s'.A1]	of:=[$'It''s'.A1]	=$'It''s'.A1
+3D range	of:=SUM([Plain.A1:'My sheet'.B2])	of:=SUM([Plain.A1:'My sheet'.B2])	=SUM(Plain.A1:'My sheet'.B2)
+whole column	of:=SUM([.A:.A])	of:=SUM([.A:.A])	=SUM(A:A)
+whole column abs	of:=SUM([.$A:.$C])	of:=SUM([.$A:.$C])	=SUM($A:$C)
+whole row	of:=SUM([.1:.1])	of:=SUM([.1:.1])	=SUM(1:1)
+whole rows other	of:=SUM([Plain.2:.4])	of:=SUM([Plain.2:.4])	=SUM(Plain.2:4)
+separators	of:=SUM(1;2;3)	of:=SUM(1;2;3)	=SUM(1,2,3)
+empty argument	of:=IF(1;;2)	of:=IF(1;;2)	=IF(1,,2)
+string with quote	of:="a""b"&"c"	of:="a""b"&"c"	="a""b"&"c"
+concat	of:="x"&[.A1]	of:="x"&[.A1]	="x"&A1
+operators	of:=-[.A1]^2*3/4+5-6<>7	of:=-[.A1]^2*3/4+5-6<>7	=-A1^2*3/4+5-6<>7
+comparisons	of:=AND(1<=2;2>=1;1<2;2>1;1=1)	of:=AND(1<=2;2>=1;1<2;2>1;1=1)	=AND(1<=2,2>=1,1<2,2>1,1=1)
+percent	of:=50%*2	of:=50%*2	=50%*2
+unary plus	of:=+[.A1]	of:=+[.A1]	=+A1
+numbers	of:=1E3+0.5+1.50+.25	of:=1000+0.5+1.5+0.25	=1000+0.5+1.5+0.25
+spaces kept	of:= 1 +  2	of:= 1 +  2	= 1 +  2
+intersection	of:=SUM([.A1:.B2] ! [.B1:.C2])	of:=SUM([.A1:.B2] ! [.B1:.C2])	=SUM(A1:B2 ! B1:C2)
+union (~)	of:=SUM([.A1]~[.B2])	of:=SUM([.A1]~[.B2])	=SUM(A1~B2)
+inline array	of:=SUM({1;2|3;4})	of:=SUM({1;2|3;4})	=SUM({1,2;3,4})
+inline array strings	of:=INDEX({"a";"b"};1;2)	of:=INDEX({"a";"b"};1;2)	=INDEX({"a","b"},1,2)
+error literal	of:=IFERROR(#N/A;1)	of:=IFERROR(#N/A;1)	=IFERROR(#N/A,1)
+TRUE()	of:=IF(TRUE();1;2)	of:=IF(TRUE();1;2)	=IF(TRUE(),1,2)
+lower-case function	of:=sum(1;2)	of:=SUM(1;2)	=SUM(1,2)
+namespaced MS	of:=COM.MICROSOFT.IFS(1;2)	of:=COM.MICROSOFT.IFS(1;2)	=IFS(1,2)
+namespaced OOo	of:=ORG.OPENOFFICE.WEEKS(DATE(2024;1;1);DATE(2024;2;1);0)	of:=ORG.OPENOFFICE.WEEKS(DATE(2024;1;1);DATE(2024;2;1);0)	=WEEKS(DATE(2024,1,1),DATE(2024,2,1),0)
+namespaced LO	of:=ORG.LIBREOFFICE.RAWSUBTRACT(5;3)	of:=ORG.LIBREOFFICE.RAWSUBTRACT(5;3)	=RAWSUBTRACT(5,3)
+named range	of:=myname*2	of:=myname*2	=myname*2
+named expression	of:=myexpr+1	of:=myexpr+1	=myexpr+1
+sheet-local name	of:=localname+0	of:=localname+0	=localname+0
+ref error	of:=[.#REF!]	of:=#REF!	=#REF!
+ref error in range	of:=SUM([.A1:.#REF!])	of:=SUM(A1:#REF!)	=SUM(A1:#REF!)
+external ref	of:=['file:///C:/tmp/other.ods'#$Sheet1.A1]	of:=['file:///C:/tmp/other.ods'#$Sheet1.A1]	='file:///C:/tmp/other.ods'#$Sheet1.A1
+external range	of:=SUM(['file:///C:/tmp/other.ods'#$Sheet1.A1:.B2])	of:=SUM(['file:///C:/tmp/other.ods'#$Sheet1.A1:.B2])	=SUM('file:///C:/tmp/other.ods'#$Sheet1.A1:B2)
+oooc prefix	oooc:=SUM([.A1:.A2])	of:=SUM([.A1:.A2])	=SUM(A1:A2)
+msoxl prefix	msoxl:=SUM(A1:A2)+Plain!A1	of:=SUM([.A1:.A2])+plain![.A1]	=SUM(A1:A2)+plain!A1
+no prefix	=1+2	of:=1+2	=1+2
+nested functions	of:=ROUND(SUM([.A1:.A3];AVERAGE([.B1:.B3]));2)	of:=ROUND(SUM([.A1:.A3];AVERAGE([.B1:.B3]));2)	=ROUND(SUM(A1:A3,AVERAGE(B1:B3)),2)
+dotted function	of:=NORM.DIST(1;0;1;1())	of:=norm.dist(1;0;1;1())	=norm.dist(1,0,1,1())
+unicode string	of:="Ünï ✓"	of:="Ünï ✓"	="Ünï ✓"
+long sheet range	of:=SUM(['My sheet'.A1:'My sheet'.B2])	of:=SUM(['My sheet'.A1:'My sheet'.B2])	=SUM('My sheet'.A1:'My sheet'.B2)

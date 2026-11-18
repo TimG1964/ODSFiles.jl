@@ -1,0 +1,263 @@
+# Editing: `newods`, `addsheet!`, `setdata!` / `setindex!`, `setFormula`.
+#
+# The forms of `setdata!` and indexed assignment follow XLSX.jl 0.13.4 (src/setdata.jl;
+# `newxlsx` in src/read.jl; `addsheet!` in src/sheetops.jl), MIT License, Copyright (c)
+# 2018-2026 Felipe Noronha Tavares and other contributors. Values go into the run-length
+# store (`store_set!`), and edits to sheets read from a file are recorded so that saving
+# can patch the file (D-023).
+
+function _require_writable(xf::ODSFile, what::AbstractString)
+    xf.writable || throw(ODSError("Can't $what: the file is read-only. Open it with `openods(…; mode=\"rw\")`, or start one with `newods()`."))
+    return nothing
+end
+_require_writable(ws::Worksheet, what::AbstractString) = _require_writable(get_odsfile(ws), what)
+
+"""
+    newods(sheetname="") -> ODSFile
+
+A new, empty spreadsheet with one sheet (`Sheet1`, or `sheetname`), open for writing.
+Write it with [`writeods`](@ref).
+"""
+function newods(sheetname::AbstractString = "")
+    xf = ODSFile("blank.ods", nothing, "", DEFAULT_ODF_VERSION, StyleIndex(), Worksheet[], DefinedName[],
+                 SheetCore.DEFAULT_NULL_DATE, true, true, nothing)
+    addsheet!(xf, isempty(sheetname) ? "Sheet1" : sheetname)
+    return xf
+end
+
+# LibreOffice does not allow these characters in sheet names.
+const _BAD_SHEETNAME_CHARS = ('[', ']', '*', '?', ':', '/', '\\')
+
+function _check_sheetname(xf::ODSFile, name::AbstractString)
+    isempty(name) && throw(ODSError("A sheet name can't be empty."))
+    for c in _BAD_SHEETNAME_CHARS
+        occursin(c, name) && throw(ODSError("The sheet name `$name` holds `$c`, which LibreOffice does not allow in sheet names."))
+    end
+    (startswith(name, '\'') || endswith(name, '\'')) &&
+        throw(ODSError("A sheet name can't start or end with an apostrophe: `$name`."))
+    _check_xml_text(name)
+    hassheet(xf, name) && throw(ODSError("$(xf.source) already has a sheet named `$name`."))
+    return nothing
+end
+
+"""
+    addsheet!(xf::ODSFile, name="") -> Worksheet
+
+Add an empty sheet at the end. Without a name, it is called `SheetN` (the first free N).
+"""
+function addsheet!(xf::ODSFile, name::AbstractString = "")
+    _require_writable(xf, "add a sheet")
+    if isempty(name)
+        n = length(_sheets(xf)) + 1
+        while hassheet(xf, "Sheet$n")
+            n += 1
+        end
+        name = "Sheet$n"
+    end
+    _check_sheetname(xf, name)
+    ws = Worksheet(xf, String(name), length(_sheets(xf)) + 1, nothing, true, SheetStore(), nothing, ReentrantLock())
+    push!(xf.sheets, ws)
+    return ws
+end
+
+#
+# Setting one cell
+#
+
+function _mark_dirty!(ws::Worksheet, row::Int, col::Int)
+    ws.entry === nothing && return
+    push!(get!(Vector{Int}, ws.dirty, row), col)
+    return
+end
+
+# Sets one cell to `v`, keeping a merge anchor's spans and, when it fits, the cell's style.
+function _set_cell!(ws::Worksheet, row::Int, col::Int, v)
+    (1 <= row <= SheetCore.MAX_ROWS && 1 <= col <= SheetCore.MAX_COLS) ||
+        throw(ODSError("Cell ($row, $col) is outside the sheet (at most $(SheetCore.MAX_ROWS) rows and $(SheetCore.MAX_COLS) columns)."))
+    s = _cached_store(ws)
+    old = cell_data(s, row, col)
+    styles = get_odsfile(ws).styles
+    d = if old === nothing
+        encode_value(v, choose_style(styles, 0, v))
+    else
+        encode_value(v, choose_style(styles, old.style, v); colspan = old.colspan, rowspan = old.rowspan,
+                     covered = (old.flags & F_COVERED) != 0)
+    end
+    store_set!(s, row, col, d)
+    _mark_dirty!(ws, row, col)
+    return v
+end
+
+"""
+    setdata!(sheet, ref, value)
+    setdata!(sheet, row, col, value)
+    sheet[ref] = value
+    sheet[row, col] = value
+
+Write `value` into a cell, or into every cell of a range. The file must be writable
+([`openods`](@ref) with `mode="rw"` or `"w"`, or [`newods`](@ref)).
+
+- `value` may be a number, string, `Bool`, `Date`, `DateTime`, `Time`, a period (a
+  duration), or `missing`/`nothing` to empty the cell.
+- A matrix fills a range of its size.
+- A vector fills a row (`dim=2`, the default) or a column (`dim=1`) from a cell, or a
+  one-row or one-column range.
+- `ref` takes the forms of [`getdata`](@ref): `"B2"`, `"B2:D4"`, `"Sheet1.B2"`, `"Sheet1!B2"`,
+  integers and ranges.
+
+A cell keeps its style when that style's format fits the new value. Otherwise dates,
+date-times, times and booleans get ISO formats, and numbers and text the `Default` style
+(D-024, D-027).
+"""
+function setdata!(ws::Worksheet, ref::CellRef, value)
+    _require_writable(ws, "write to a cell")
+    return _set_cell!(ws, row_number(ref), column_number(ref), value)
+end
+setdata!(ws::Worksheet, row::Integer, col::Integer, value) = setdata!(ws, CellRef(row, col), value)
+
+function setdata!(ws::Worksheet, ref::CellRef, value::AbstractVector, dim::Integer = 2)
+    _require_writable(ws, "write to a cell")
+    dim in (1, 2) || throw(ODSError("`dim` must be 1 (down a column) or 2 (along a row), not $dim."))
+    r, c = row_number(ref), column_number(ref)
+    for (k, x) in enumerate(value)
+        dim == 2 ? _set_cell!(ws, r, c + k - 1, x) : _set_cell!(ws, r + k - 1, c, x)
+    end
+    return value
+end
+
+function setdata!(ws::Worksheet, ref::CellRef, value::AbstractMatrix)
+    _require_writable(ws, "write to a cell")
+    r, c = row_number(ref), column_number(ref)
+    for j in axes(value, 2), i in axes(value, 1)
+        _set_cell!(ws, r + i - first(axes(value, 1)), c + j - first(axes(value, 2)), value[i, j])
+    end
+    return value
+end
+
+function setdata!(ws::Worksheet, rng::CellRange, value)
+    _require_writable(ws, "write to a range")
+    rows = row_number(rng.start):row_number(rng.stop)
+    cols = column_number(rng.start):column_number(rng.stop)
+    return _set_block!(ws, rows, cols, value)
+end
+
+# Writes `value` over rows × cols: a scalar fills them; a matrix must have their shape; a
+# vector fills a one-row or one-column block.
+function _set_block!(ws::Worksheet, rows, cols, value)
+    if value isa AbstractMatrix
+        size(value) == (length(rows), length(cols)) ||
+            throw(ODSError("A $(size(value, 1))×$(size(value, 2)) matrix doesn't fit a $(length(rows))×$(length(cols)) range."))
+        for (j, c) in enumerate(cols), (i, r) in enumerate(rows)
+            _set_cell!(ws, r, c, value[first(axes(value, 1)) + i - 1, first(axes(value, 2)) + j - 1])
+        end
+    elseif value isa AbstractVector
+        if length(rows) == 1 && length(cols) == length(value)
+            for (k, c) in enumerate(cols); _set_cell!(ws, first(rows), c, value[firstindex(value) + k - 1]); end
+        elseif length(cols) == 1 && length(rows) == length(value)
+            for (k, r) in enumerate(rows); _set_cell!(ws, r, first(cols), value[firstindex(value) + k - 1]); end
+        else
+            throw(ODSError("A vector of $(length(value)) values doesn't fit a $(length(rows))×$(length(cols)) range: give a range of one row or one column of that length."))
+        end
+    else
+        for c in cols, r in rows
+            _set_cell!(ws, r, c, value)
+        end
+    end
+    return value
+end
+
+setdata!(ws::Worksheet, s::SheetCellRef, value) = (do_sheet_names_match(ws, s); setdata!(ws, s.cellref, value))
+setdata!(ws::Worksheet, s::SheetCellRange, value) = (do_sheet_names_match(ws, s); setdata!(ws, s.rng, value))
+setdata!(ws::Worksheet, rng::Union{ColumnRange,RowRange,SheetColumnRange,SheetRowRange,NonContiguousRange}, value) =
+    throw(ODSError("Writing to whole columns, whole rows or lists of ranges is not supported; give a cell or a cell range."))
+
+function setdata!(ws::Worksheet, ref::AbstractString, value)
+    _require_writable(ws, "write to a cell")
+    p = _plain_ref(ref)
+    if p !== nothing
+        is_valid_cellname(p) && return setdata!(ws, CellRef(p), value)
+        is_valid_cellrange(p) && return setdata!(ws, CellRange(p), value)
+    end
+    typed = try
+        parse_sheet_ref(ref)
+    catch e
+        e isa ODSError || rethrow()
+        throw(ODSError("`$ref` is not a cell or cell range to write to."))
+    end
+    return setdata!(ws, typed, value)
+end
+setdata!(ws::Worksheet, ref::AbstractString, value::AbstractVector, dim::Integer) =
+    setdata!(ws, CellRef(something(_plain_ref(ref), ref)), value, dim)
+
+# indexed forms, as XLSX.jl
+_as_range(x::Integer) = x:x
+_as_range(x::AbstractVector{<:Integer}) = x
+_as_range(x::AbstractRange{<:Integer}) = x
+
+Base.setindex!(ws::Worksheet, v, ref::Union{AbstractString,CellRef,CellRange,SheetCellRef,SheetCellRange}) = setdata!(ws, ref, v)
+function Base.setindex!(ws::Worksheet, v::AbstractVector, ref::Union{AbstractString,CellRef}; dim::Integer = 2)
+    ref isa CellRef && return setdata!(ws, ref, v, dim)
+    p = _plain_ref(ref)
+    p !== nothing && is_valid_cellname(p) && return setdata!(ws, CellRef(p), v, dim)
+    return setdata!(ws, ref, v)          # a range: the vector must fit it
+end
+function Base.setindex!(ws::Worksheet, v, r::Union{Integer,AbstractVector{<:Integer}}, c::Union{Integer,AbstractVector{<:Integer}})
+    _require_writable(ws, "write to a cell")
+    if r isa Integer && c isa Integer
+        v isa AbstractArray && throw(ODSError("A single cell takes a single value, not a $(typeof(v))."))
+        return _set_cell!(ws, Int(r), Int(c), v)
+    end
+    return _set_block!(ws, _as_range(r), _as_range(c), v)
+end
+
+#
+# Formulas
+#
+
+"""
+    setFormula(sheet, ref; val, raw=false)
+    setFormula(sheet, row, col; val, raw=false)
+
+Write a formula into a cell, or into every cell of a range (the same formula in each).
+`val` is in LibreOffice's notation, as [`getFormula`](@ref) gives it:
+`"=SUM(B1:B3,'My sheet'.A1)"`. It is stored as OpenFormula (`of:=SUM([.B1:.B3];['My sheet'.A1])`)
+(D-025). With `raw=true`, `val` is stored as given, and must be a stored formula such as
+`"of:=[.A1]*2"`.
+
+The cell's value is left empty: LibreOffice computes it when it opens the file (F-028).
+"""
+function setFormula(ws::Worksheet, ref::CellRef; val::AbstractString, raw::Bool = false)
+    _require_writable(ws, "write a formula")
+    f = raw ? String(val) : ui_to_openformula(val)
+    raw && !occursin(r"^[A-Za-z][A-Za-z0-9_.-]*:=", f) && !startswith(f, "=") &&
+        throw(ODSError("A raw formula must start with its namespace and `=`, such as `of:=…`: got `$val`."))
+    _check_xml_text(f)
+    r, c = row_number(ref), column_number(ref)
+    s = _cached_store(ws)
+    old = cell_data(s, r, c)
+    style = old === nothing ? Int32(0) : old.style
+    d = CellData(CK_EMPTY, old === nothing ? 0x00 : (old.flags & F_COVERED), style, UInt64(0), nothing, f,
+                 old === nothing ? Int32(1) : old.colspan, old === nothing ? Int32(1) : old.rowspan)
+    store_set!(s, r, c, d)
+    _mark_dirty!(ws, r, c)
+    return f
+end
+setFormula(ws::Worksheet, row::Integer, col::Integer; kw...) = setFormula(ws, CellRef(row, col); kw...)
+function setFormula(ws::Worksheet, rng::CellRange; kw...)
+    for c in column_number(rng.start):column_number(rng.stop), r in row_number(rng.start):row_number(rng.stop)
+        setFormula(ws, CellRef(r, c); kw...)
+    end
+    return nothing
+end
+function setFormula(ws::Worksheet, ref::AbstractString; kw...)
+    p = _plain_ref(ref)
+    if p !== nothing
+        is_valid_cellname(p) && return setFormula(ws, CellRef(p); kw...)
+        is_valid_cellrange(p) && return setFormula(ws, CellRange(p); kw...)
+    end
+    typed = parse_sheet_ref(ref)
+    do_sheet_names_match(ws, typed)
+    typed isa SheetCellRef && return setFormula(ws, typed.cellref; kw...)
+    typed isa SheetCellRange && return setFormula(ws, typed.rng; kw...)
+    throw(ODSError("`$ref` is not a cell or cell range for a formula."))
+end

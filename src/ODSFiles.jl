@@ -1,0 +1,86 @@
+"""
+    ODSFiles
+
+Read and write OpenDocument spreadsheets (`.ods`, `.fods`, `.ots`) in pure Julia.
+
+The public API mirrors XLSX.jl wherever that is reasonable (see `records/api-divergence.md` in the workspace).
+"""
+module ODSFiles
+
+import Dates
+import Parsers
+import Tables
+import Unicode
+import XML
+import ZipArchives
+using Printf: @printf
+
+# The format-independent core, shared in future with XLSX.jl (D-001). ODSFiles uses it by
+# qualified name (`SheetCore.CellRef`), or through the names imported below.
+include("core/SheetCore.jl")
+using .SheetCore: SheetCoreError, readentry_string, readentry_prefix, CellRef, CellRange, ColumnRange, RowRange,
+    row_number, column_number, is_valid_cellname, is_valid_cellrange, is_valid_column_range,
+    is_valid_row_range, DataTable, TableRow, TableRowIterator
+# functions the back end adds methods to
+import .SheetCore: getdata, gettable, eachtablerow
+
+# Sheet-qualified references in ODSFiles are always in LibreOffice's notation (D-015):
+# they print as `Sheet1.A1`, and parse that form as well as Excel's `Sheet1!A1`.
+const SheetCellRef       = SheetCore.SheetCellRef{SheetCore.ODFStyle}
+const SheetCellRange     = SheetCore.SheetCellRange{SheetCore.ODFStyle}
+const SheetColumnRange   = SheetCore.SheetColumnRange{SheetCore.ODFStyle}
+const SheetRowRange      = SheetCore.SheetRowRange{SheetCore.ODFStyle}
+const NonContiguousRange = SheetCore.NonContiguousRange{SheetCore.ODFStyle}
+parse_sheet_ref(s::AbstractString) = SheetCore.parse_sheet_ref(SheetCore.ODFStyle, s)
+
+"""
+    ODSError
+
+The exception ODSFiles throws for its own errors: an invalid reference, a missing sheet, a
+file that is not an ODF spreadsheet, and so on. It is the shared core's `SheetCoreError`
+(D-021), so one type covers errors from both.
+"""
+const ODSError = SheetCoreError
+
+# container I/O (phase 0)
+include("io/container.jl")
+include("io/sheetindex.jl")
+include("io/prefix.jl")
+include("io/writer.jl")
+
+# the read model (phase 1)
+include("model/styleindex.jl")
+include("model/cells.jl")
+include("model/sheetreader.jl")
+include("model/workbook.jl")
+include("model/access.jl")
+include("model/rows.jl")
+include("model/tables.jl")
+include("formula/openformula.jl")
+include("formula/uiformula.jl")
+
+# the write path (phase 2)
+include("write/values.jl")
+include("write/edit.jl")
+include("write/xmlout.jl")
+include("write/patch.jl")
+include("write/save.jl")
+include("write/stream.jl")
+include("write/writetable.jl")
+
+export
+    # files and worksheets
+    ODSFile, readods, openods, newods, writeods, saveods,
+    Worksheet, sheetnames, sheetcount, hassheet, addsheet!,
+    # cells and data
+    CellRef, SheetCellRef, row_number, column_number, eachtablerow,
+    readdata, getdata, gettable, readtable, readto,
+    iserror, geterror,
+    setdata!, setFormula,
+    writetable, writetable!, streamods, writerow!, writerows!
+
+@static if VERSION >= v"1.11"
+    eval(Meta.parse("public getcell, getcellrange, getFormula, get_dimension, ODSError, Cell, EmptyCell, DataTable, TableRow, TableRowIterator, SheetRow, StreamWriter, StreamSheet"))
+end
+
+end # module
