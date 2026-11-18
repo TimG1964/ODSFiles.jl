@@ -165,7 +165,7 @@ struct ODFStyle <: RefStyle end
 
 A cell on a named sheet: a [`CellRef`](@ref) together with the name of its sheet, in
 the fields `sheet` and `cellref`. `S` is the notation it is parsed from and shown in
-([`RefStyle`](@ref)); each back end binds `SheetCellRef` to its own style.
+(`RefStyle`); each back end binds `SheetCellRef` to its own style.
 
 `SheetCellRef{ExcelStyle}("Sheet1!B2")` refers to cell `B2` on sheet `Sheet1`. A sheet name
 containing spaces or other special characters is quoted, as in Excel:

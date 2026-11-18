@@ -1,0 +1,121 @@
+name: CI
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+    tags:
+      - '*'
+concurrency:
+  # Cancel an earlier run of the same branch or pull request when a new one starts.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+jobs:
+  test:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - '1'       # the latest stable 1.x release
+          - 'lts'     # 1.10, the oldest Julia ODSFiles supports
+          - 'pre'
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macOS-latest
+        arch:
+          - 'default'
+        include:
+          - version: '1'        # 32-bit
+            os: ubuntu-latest
+            arch: x86
+          - version: 'nightly'
+            os: ubuntu-latest
+            arch: 'default'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: ${{ matrix.version }}
+          arch: ${{ matrix.arch }}
+      - uses: julia-actions/cache@v3
+      - uses: julia-actions/julia-buildpkg@v1
+        continue-on-error: ${{ matrix.version == 'nightly' }}
+      - uses: julia-actions/julia-runtest@v1
+        continue-on-error: ${{ matrix.version == 'nightly' }}
+      - uses: julia-actions/julia-processcoverage@v1
+        if: matrix.version == '1' && matrix.arch == 'default'
+      - uses: codecov/codecov-action@v7
+        if: matrix.version == '1' && matrix.arch == 'default'
+        with:
+          files: lcov.info
+          use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          # Coverage is reported, not required: set to true once Codecov is set up for the repository.
+          fail_ci_if_error: false
+
+  test-parsers2:
+    # Parsers.jl 2 is still allowed (compat "2.8, 3", as XLSX.jl) and takes a different code
+    # path in src/model/cells.jl (`_PARSERS_V2`), so the tests run against it too. The compat
+    # is narrowed in the checkout only, for this job.
+    name: Julia 1 - ubuntu-latest - Parsers 2 - ${{ github.event_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v3
+      - run: sed -i 's/^Parsers = "2.8, 3"$/Parsers = "2.8"/' Project.toml && grep '^Parsers = "2.8"$' Project.toml
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+
+  test-libreoffice:
+    # The tests that check files against LibreOffice (D-011) are skipped where it is absent;
+    # here it is installed, so they run: LibreOffice opens, recalculates and re-saves the files
+    # ODSFiles writes. Not required yet: it runs headless on Linux, which the project
+    # developed against on Windows.
+    name: Julia 1 - ubuntu-latest - with LibreOffice - ${{ github.event_name }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-calc-nogui
+      - run: soffice --version
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v3
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+        env:
+          ODSFILES_SOFFICE: /usr/bin/soffice
+
+  # The docs are built and deployed by Documentation.yml.
+  docs-links:
+    # Checks the docs' external links. Other sites go down or move, so a failure here is a
+    # prompt to look rather than a broken build. No deploy credentials are given, so
+    # deploydocs does nothing.
+    name: Documentation links
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - run: |
+          julia --project=docs -e '
+            using Pkg
+            Pkg.develop(PackageSpec(path=pwd()))
+            Pkg.instantiate()'
+      - run: julia --project=docs docs/make.jl
+        env:
+          DOCUMENTER_LINKCHECK: 'true'

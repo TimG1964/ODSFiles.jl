@@ -214,7 +214,7 @@ const SOFFICE = get(ENV, "ODSFILES_SOFFICE",
                 p = joinpath(dir, "w$(replace(v, "." => ""))." * fmt)
                 write_package(p, [PackagePart("content.xml", replace(xml, "office:version=\"1.4\"" => "office:version=\"$v\""))];
                               mediatype = mt, version = v)
-                profile = "file:///" * replace(joinpath(dir, "lo-profile"), "\\" => "/")
+                profile = lo_profile_url(joinpath(dir, "lo-profile"))
                 outdir = joinpath(dir, "csv")
                 run(pipeline(`$SOFFICE -env:UserInstallation=$profile --headless --norestore --convert-to csv --outdir $outdir $p`;
                              stdout = devnull, stderr = devnull))

@@ -354,7 +354,7 @@ end
         @test_skip false
     else
         dir = mktempdir()
-        profile = "file:///" * replace(joinpath(dir, "lo-profile"), "\\" => "/")
+        profile = lo_profile_url(joinpath(dir, "lo-profile"))
         # a new file: values, typed styles, formulas computed by LibreOffice
         xf = newods("Data")
         ws = xf["Data"]

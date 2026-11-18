@@ -85,7 +85,7 @@ end
     if !isempty(SOFFICE) && isfile(SOFFICE)
         # LibreOffice shows values written without display text
         out = joinpath(dir, "lo")
-        profile = "file:///" * replace(joinpath(dir, "lo-profile"), "\\" => "/")
+        profile = lo_profile_url(joinpath(dir, "lo-profile"))
         src = joinpath(dir, "tfalse.ods")
         run(pipeline(`$SOFFICE -env:UserInstallation=$profile --headless --norestore --convert-to csv --outdir $out $src`;
                      stdout = devnull, stderr = devnull))

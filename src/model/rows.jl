@@ -12,7 +12,7 @@
 """
     SheetRow
 
-A row of a worksheet, as [`eachrow`](@ref) gives it. `row_number(r)` is its number;
+A row of a worksheet, as [`eachrow`](@ref Base.eachrow(::Worksheet)) gives it. `row_number(r)` is its number;
 `r[col]` (a column number or name such as `"B"`) is a value, `getcell(r, col)` a cell.
 """
 struct SheetRow
@@ -64,7 +64,7 @@ end
 """
     WorksheetRows
 
-The rows of a cached sheet, as [`eachrow`](@ref) gives them.
+The rows of a cached sheet, as [`eachrow`](@ref Base.eachrow(::Worksheet)) gives them.
 """
 struct WorksheetRows
     sheet::Worksheet
@@ -87,7 +87,7 @@ end
 """
     SheetRowStreamIterator
 
-The rows of a sheet read as they are iterated, keeping nothing: [`eachrow`](@ref) with the
+The rows of a sheet read as they are iterated, keeping nothing: [`eachrow`](@ref Base.eachrow(::Worksheet)) with the
 cache off. Each iteration from the start reads the sheet again.
 """
 struct SheetRowStreamIterator

@@ -1,0 +1,114 @@
+```@meta
+CurrentModule = ODSFiles
+```
+
+# Getting started
+
+## Reading
+
+[`readods`](@ref) opens a file and returns an [`ODSFile`](@ref). A sheet is read the first
+time it is used.
+
+```julia
+using ODSFiles
+
+xf = readods("data.ods")
+sheetnames(xf)            # the sheets, in order
+sh = xf["Sheet1"]         # or xf[1]
+
+sh["A1"]                  # a value: a number, string, Date, ..., or missing
+sh["A1:C3"]               # a Matrix{Any}
+sh[2, 3]                  # row 2, column 3
+sh[:, 1]                  # a whole column, as far as the sheet has data
+sh[:]                     # everything
+```
+
+To read one value or range without keeping the file open, use [`readdata`](@ref):
+
+```julia
+readdata("data.ods", "Sheet1", "B2:D5")
+readdata("data.ods", "Sheet1.B2:D5")       # LibreOffice's notation
+readdata("data.ods", "Sheet1!B2:D5")       # Excel's notation works too
+```
+
+## Tables
+
+A table is a block of rows with a header. [`readtable`](@ref) reads it into a `DataTable`,
+which any Tables.jl sink accepts:
+
+```julia
+using DataFrames
+df = DataFrame(readtable("data.ods", "Sheet1"))
+```
+
+Without further keywords, the table starts at the first row with data and spans the first
+run of non-empty header cells. Columns, the first row, labels and the handling of empty rows
+can all be chosen; see [`readtable`](@ref).
+
+## Rows
+
+[`eachrow`](@ref Base.eachrow(::Worksheet)) gives the rows that have content:
+
+```julia
+for r in eachrow(xf["Sheet1"])
+    println(row_number(r), ": ", r[1], " ", r["B"])
+end
+```
+
+For files too large to hold in memory, open them with `enable_cache=false`: rows are then
+read as they are iterated.
+
+```julia
+openods("big.ods"; enable_cache = false) do xf
+    for r in eachrow(xf[1])
+        # ...
+    end
+end
+```
+
+## Writing a new file
+
+```julia
+xf = newods("Results")
+sh = xf["Results"]
+sh["A1"] = "Name"
+sh["B1"] = "Score"
+sh["A2:B3"] = ["Ann" 9.5; "Bob" 7]
+sh["C2"] = Date(2026, 11, 18)
+setFormula(sh, "B4"; val = "=SUM(B2:B3)")
+writeods("results.ods", xf)
+```
+
+Or write a whole table at once:
+
+```julia
+writetable("results.ods", df; sheetname = "Results")
+writetable("all.ods", "Results" => df, "Notes" => notes)
+```
+
+## Editing a file
+
+Open it with `mode="rw"`. The do-block form saves the file when the block ends:
+
+```julia
+openods("budget.ods"; mode = "rw") do xf
+    xf["Costs"]["B7"] = 1250.0
+    addsheet!(xf, "Summary")["A1"] = "Total"
+end
+```
+
+Everything ODSFiles does not change — styles, column widths, comments, images, charts,
+settings — is kept exactly as it was ([Saving and writing](@ref)).
+
+## Streaming a large file
+
+[`streamods`](@ref) writes rows as they are produced, in bounded memory:
+
+```julia
+streamods("big.ods") do s
+    sh = addsheet!(s, "data"; columns = ["n", "square"])
+    for n in 1:1_000_000
+        writerow!(sh, (n, n^2))
+    end
+end
+```

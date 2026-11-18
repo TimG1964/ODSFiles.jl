@@ -7,12 +7,6 @@
 # 2018-2026 Felipe Noronha Tavares and other contributors. All sheets share one content.xml
 # in ODS, so a sheet is finished when the next one is added.
 
-"""
-    StreamSheet
-
-A sheet being written by [`streamods`](@ref). Write rows to it in order with
-[`writerow!`](@ref) and [`writerows!`](@ref).
-"""
 # The rows not yet passed to the zip, and the zip's content.xml entry, shared by the writer
 # and its sheets. A flush hands the bytes to the zip (`take!`) and wraps the same memory in
 # a new buffer, so it is not allocated again for each chunk (as XLSX.jl's writer does).
@@ -28,6 +22,12 @@ function _flush!(b::_StreamBuffer)
     return nothing
 end
 
+"""
+    StreamSheet
+
+A sheet being written by [`streamods`](@ref). Write rows to it in order with
+[`writerow!`](@ref) and [`writerows!`](@ref).
+"""
 mutable struct StreamSheet
     name::String
     buf::_StreamBuffer

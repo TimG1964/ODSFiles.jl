@@ -138,7 +138,7 @@ returns.
 - `enable_cache=true`: a sheet is parsed into memory the first time one of its cells is
   read; later reads use that copy.
 - `enable_cache=false`: every read scans the sheet again, keeping nothing, and stops after
-  the last row it needs. Use it with [`eachrow`](@ref) to stream a large sheet.
+  the last row it needs. Use it with [`eachrow`](@ref Base.eachrow(::Worksheet)) to stream a large sheet.
 
 Modes, as in XLSX.jl:
 - `"r"`: read only.
