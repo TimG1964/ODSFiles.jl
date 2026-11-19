@@ -5,7 +5,7 @@ using Dates
 import Tables
 using ODSFiles: getcell, getFormula, Cell, EmptyCell, ODSError, store_set!, SheetStore, CellData,
     encode_value, cell_data, ui_to_openformula, render_ui_formula, _strip_formula_prefix, isvisible,
-    defined_names, get_dimension, SheetStore, CK_FLOAT, F_INTLIKE
+    defined_names, get_dimension, SheetStore, CK_FLOAT, CK_STRING, F_INTLIKE
 
 tmp(name) = joinpath(mktempdir(), name)
 
@@ -34,8 +34,11 @@ end
     @test encode_value(missing, Int32(0)) === nothing && encode_value(nothing, Int32(0)) === nothing
     @test (encode_value(7, Int32(0)).flags & F_INTLIKE) != 0
     @test (encode_value(7.0, Int32(0)).flags & F_INTLIKE) == 0
-    @test_throws ODSError encode_value(NaN, Int32(0))
-    @test_throws ODSError encode_value(Inf, Int32(0))
+    # ODF has no NaN or Inf: written as text, as XLSX.jl does (D-043)
+    for (x, s) in ((NaN, "NaN"), (Inf, "Inf"), (-Inf, "-Inf"), (Inf32, "Inf"), (big(-Inf), "-Inf"))
+        d = encode_value(x, Int32(0))
+        @test d.kind === CK_STRING && d.text == s
+    end
     @test_throws ODSError encode_value("a\x01b", Int32(0))
     @test_throws ODSError encode_value(Month(1), Int32(0))
     @test_throws ODSError encode_value(:sym, Int32(0))

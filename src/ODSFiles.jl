@@ -9,6 +9,7 @@ module ODSFiles
 
 import Dates
 import Parsers
+import PrecompileTools as PCT
 import Tables
 import Unicode
 import XML
@@ -99,5 +100,7 @@ export
     eval(Meta.parse("public getcell, getcellrange, getFormula, get_dimension, ODSError, Cell, EmptyCell, DataTable, TableRow, TableRowIterator, SheetRow, StreamWriter, StreamSheet, " *
                     "getFont, getBorder, getFill, getAlignment, getFormat, getText, getDefaultFont, setOutsideBorder, CellFont, CellFill, CellBorder, CellAlignment, CellFormat, getColumnWidth, getRowHeight"))
 end
+
+include("precompile.jl")
 
 end # module

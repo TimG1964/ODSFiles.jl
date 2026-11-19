@@ -123,7 +123,9 @@ end
     encode_value(value, style::Int32; colspan=1, rowspan=1, covered=false) -> Union{CellData, Nothing}
 
 The stored form of a Julia value: `nothing` (remove the cell) for `missing` and `nothing`.
-Integers are stored as whole numbers, other reals as Float64 (D-026); dates, date-times,
+Integers are stored as whole numbers, other reals as Float64 (D-026), except `NaN`, `Inf`
+and `-Inf`, which ODF can't hold as numbers: they are stored as the text `"NaN"`, `"Inf"`
+and `"-Inf"`, as XLSX.jl does (D-043); dates, date-times,
 times and durations, booleans and strings as their ODF types.
 """
 function encode_value(v, style::Int32; colspan::Integer = 1, rowspan::Integer = 1, covered::Bool = false)
@@ -139,7 +141,8 @@ function encode_value(v, style::Int32; colspan::Integer = 1, rowspan::Integer = 
         return mk(CK_FLOAT, reinterpret(UInt64, Float64(x)), string(x); extra = F_INTLIKE)
     elseif v isa Real
         x = Float64(v)
-        isfinite(x) || throw(ODSError("$v can't be written: an ODF cell holds only finite numbers."))
+        # ODF has no NaN or Inf: like XLSX.jl, write them as the text "NaN", "Inf", "-Inf" (D-043).
+        isfinite(x) || return mk(CK_STRING, UInt64(0), string(x))
         return mk(CK_FLOAT, reinterpret(UInt64, x))
     elseif v isa AbstractString
         s = String(v)
