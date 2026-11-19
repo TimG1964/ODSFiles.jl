@@ -12,6 +12,7 @@
 #   - setters return the cell's style name for a single cell (D-032)
 
 using ODSFiles: ODSError, getFont, getFill, getBorder, getAlignment, getDefaultFont, setOutsideBorder, effective_style, style_name
+import ZipArchives
 
 ctmp(name) = joinpath(mktempdir(), name)
 # a font dict: LibreOffice's default size and name unless given
@@ -420,4 +421,59 @@ end
         @test getFont(r2, "C1").font["name"] == Dict("val" => "Courier New") && haskey(getFont(r2, "A1").font, "b")
         @test r2["C1"] === Int64(3)
     end
+end
+
+@testset "styles no cell uses are not written (D-046)" begin
+    content(p) = String(ZipArchives.zip_readentry(ZipArchives.ZipReader(read(p)), "content.xml"))
+    f = newods(); s = f[1]
+    s["A1"] = 1.5
+    n1 = setFont(s, "A1"; bold = true)
+    n2 = setFont(s, "A1"; italic = true)
+    setFormat(s, "A1"; format = "0.000")
+    n3 = setFormat(s, "A1"; format = "0.00")
+    setColumnWidth(s, "A"; width = 10); setColumnWidth(s, "A"; width = 20)
+    @test length(unique([n1, n2, n3])) == 3
+    p = writeods(ctmp("prune.ods"), f)
+    c = content(p)
+    @test occursin("style:name=\"$n3\"", c) && !occursin("style:name=\"$n1\"", c) && !occursin("style:name=\"$n2\"", c)
+    @test occursin("number:decimal-places=\"2\"", c) && !occursin("number:decimal-places=\"3\"", c)
+    @test count("style:family=\"table-column\"", c) == 1
+    r = openods(p)[1]
+    @test ODSFiles.getText(r, "A1") == "1.50" && haskey(getFont(r, "A1").font, "b") && haskey(getFont(r, "A1").font, "i")
+    @test ODSFiles.getColumnWidth(r, "A1") ≈ 20.7109375
+    # the model keeps every style: a pruned one used again is written again
+    s["B1"] = 2.5
+    @test setFont(s, "B1"; bold = true) == n1
+    c = content(writeods(ctmp("prune2.ods"), f))
+    @test occursin("style:name=\"$n1\"", c) && !occursin("style:name=\"$n2\"", c)
+    # a patched file: only the styles the edited cells keep are added
+    q = ctmp("lo.ods"); cp(joinpath(DATA, "lo-values.ods"), q)
+    g = openods(q; mode = "rw"); w = g[1]
+    a = setFill(w, "A1"; pattern = "solid", fgColor = "FF0000")
+    b = setFill(w, "A1"; pattern = "solid", fgColor = "00FF00")
+    c = content(writeods(ctmp("lo2.ods"), g))
+    @test occursin("style:name=\"$b\"", c) && !occursin("style:name=\"$a\"", c)
+    @test getFill(openods(ctmp("lo2.ods") |> x -> writeods(x, g))[1], "A1").fill["patternFill"]["fgrgb"] == "FF00FF00"
+end
+
+@testset "setFont keeps each cell's other font properties; setUniformFont doesn't" begin
+    f = newods(); s = f[1]
+    s[1:1000, 1] = collect(1:1000)
+    s[1:1000, 2] = collect(1:1000)
+    colours = [string(k * 16_000; base = 16, pad = 6) for k in 1:1000]      # 1,000 different colours
+    for k in 1:1000
+        setFont(s, k, 1; color = colours[k]); setFont(s, k, 2; color = colours[k])
+    end
+    @test setFont(s, "A1:A1000"; bold = true) == -1
+    fa = [getFont(s, k, 1).font for k in 1:1000]
+    @test all(haskey(fa[k], "b") && fa[k]["color"]["rgb"] == "FF" * uppercase(colours[k]) for k in 1:1000)
+    setUniformFont(s, "B1:B1000"; bold = true)
+    fb = [getFont(s, k, 2).font for k in 1:1000]
+    @test all(fb[k] == fb[1] for k in 1:1000)
+    @test haskey(fb[1], "b") && fb[1]["color"]["rgb"] == "FF" * uppercase(colours[1])
+    @test length(unique(effective_style(s, k, 2) for k in 1:1000)) == 1
+    # and so after saving
+    r = openods(writeods(ctmp("colours.ods"), f))[1]
+    @test getFont(r, 777, 1).font["color"]["rgb"] == "FF" * uppercase(colours[777]) && haskey(getFont(r, 777, 1).font, "b")
+    @test getFont(r, 777, 2).font == fb[1]
 end

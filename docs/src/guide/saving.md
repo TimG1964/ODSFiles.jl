@@ -18,9 +18,12 @@ block ends (not if it throws).
 ## Editing keeps the rest of the file
 
 ODSFiles does not rebuild a file it edits. It copies the original and rewrites only the rows
-that hold edited cells:
+that hold edited or formatted cells, and the columns whose formats changed:
 
-- untouched sheets, styles, settings, images, charts and the other parts stay byte for byte
+- untouched sheets, settings, images, charts and the other parts stay byte for byte
+- styles are only added: new automatic styles go into content.xml, and named styles into
+  styles.xml ([Formatting](formatting.md)). Styles ODSFiles made that no cell uses any more are
+  not written.
 - in an edited row, the cells you did not change keep their formatting, comments and links
 
 A file saved without edits is identical to the original.

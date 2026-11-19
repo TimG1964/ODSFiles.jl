@@ -48,7 +48,7 @@ function _build_stylesheet(styles::StyleIndex)
     sh = StyleSheet(Vector{CellStyle}(undef, n), fill(false, n), datas, datainfo, Dict{CellStyle,Int32}(),
                     Int32[], String[], Dict{Tuple{Int32,Symbol},Int32}(), Dict{String,String}(), lines,
                     defaults[1], faces, String[], Dict{String,String}(), Dict{String,Int}(), false,
-                    display, Int32[])
+                    display, Int32[], Dict{Tuple{Int32,Bool},NTuple{3,Dict{String,String}}}())
     for id in 0:n-1
         name = styles.names[id + 1]
         kind = get(typed, Int32(id), nothing)
@@ -299,27 +299,61 @@ const _GENERAL_DATA_STYLE = """<number:number-style style:name="\$NAME"><number:
 general_data_style!(styles::StyleIndex) = add_data_style!(styles, _GENERAL_DATA_STYLE, DataStyleInfo(DK_NUMBER, 0, false))
 
 """
-    added_styles_xml(styles::StyleIndex) -> String
+    UsedStyles(ids, cols, rows)
 
-The automatic styles ODSFiles added to the document: its typed styles (D-024), then the data
-and cell styles added by formatting.
+What a document's sheets refer to when it is written: cell style ids (cells, empty formatted
+cells, column defaults), and column and row style names. Added styles outside it are not
+written (D-046).
 """
-function added_styles_xml(styles::StyleIndex)
+struct UsedStyles
+    ids::BitSet
+    cols::Set{String}
+    rows::Set{String}
+end
+UsedStyles() = UsedStyles(BitSet(), Set{String}(), Set{String}())
+
+# The data styles `starts` name, with those their `style:map`s apply, along the chain.
+function _data_closure(sh::StyleSheet, starts)
+    need = Set{String}()
+    todo = String[s for s in starts]
+    while !isempty(todo)
+        n = pop!(todo)
+        (isempty(n) || n in need || !haskey(sh.datastyles, n)) && continue
+        push!(need, n)
+        for m in eachmatch(r"style:apply-style-name=\"([^\"]*)\"", sh.datastyles[n])
+            push!(todo, XML.unescape(m.captures[1]))
+        end
+    end
+    return need
+end
+
+"""
+    added_styles_xml(styles::StyleIndex, used=nothing) -> String
+
+The automatic styles ODSFiles added to the document: its typed styles (D-024), then the
+column, row, data and cell styles added by formatting. With `used` (`UsedStyles`), only
+the added cell, column and row styles the sheets refer to are written, with the data
+styles those need (D-046): styles left behind by successive setters are dropped.
+"""
+function added_styles_xml(styles::StyleIndex, used::Union{Nothing,UsedStyles} = nothing)
     typed = typed_styles_xml(styles)
     sh = styles.sheet[1]
     (sh === nothing || (isempty(sh.added) && isempty(sh.added_data) && all(ls -> isempty(ls.added), sh.lines))) && return typed
+    cells = used === nothing ? sh.added : filter(id -> id in used.ids, sh.added)
     io = IOBuffer()
     print(io, typed)
-    for ls in sh.lines, name in ls.added
+    for (k, ls) in enumerate(sh.lines), name in ls.added
+        used === nothing || name in (k == 1 ? used.cols : used.rows) || continue
         print(io, "<style:style style:name=\""); _escape_attr(io, name); print(io, "\" style:family=\"", ls.family, "\">")
         _write_props(io, ls.family == "table-column" ? "style:table-column-properties" : "style:table-row-properties", ls.props[name])
         print(io, "</style:style>")
     end
     named = _named_data_styles(sh)          # these go to office:styles, with the named styles (D-045)
+    keep = used === nothing ? nothing : _data_closure(sh, (sh.cells[id + 1].datastyle for id in cells))
     for name in sh.added_data
-        name in named || print(io, sh.datastyles[name])
+        (name in named || (keep !== nothing && !(name in keep))) || print(io, sh.datastyles[name])
     end
-    for id in sh.added
+    for id in cells
         write_cell_style(io, style_name(styles, id), sh.cells[id + 1])
     end
     return String(take!(io))

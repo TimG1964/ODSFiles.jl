@@ -44,7 +44,10 @@ function resolved_props(st::StyleIndex, cs::CellStyle; defaults::Bool = true)
     end
     return cell, para, text
 end
-resolved_props(st::StyleIndex, id::Integer; kw...) = resolved_props(st, cell_style(st, id); kw...)
+# by style id: cached, as a style id's properties never change (the Dicts are shared: callers
+# must not change them)
+resolved_props(st::StyleIndex, id::Integer; defaults::Bool = true) =
+    get!(() -> resolved_props(st, cell_style(st, id); defaults), stylesheet(st).resolved, (Int32(id), defaults))
 
 # The style a transform starts from for style id `id`: an automatic style itself; a named
 # one (or Default) as the parent of a new automatic style.

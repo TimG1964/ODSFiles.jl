@@ -659,7 +659,7 @@ function patched_content(xf::ODSFile; display::Bool = true)
         push!(splices, (at, at - 1, String(take!(io))))
     end
     # typed and formatting styles
-    sx = added_styles_xml(xf.styles)
+    sx = added_styles_xml(xf.styles, used_styles(xf))
     if !isempty(sx)
         _append_splice!(splices, src, autostyles, "office:automatic-styles", sx, body)
     end

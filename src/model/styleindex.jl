@@ -104,6 +104,7 @@ mutable struct StyleSheet
     needs_loext::Bool                 # added data styles use LibreOffice's `loext:` attributes
     display::Dict{String,String}      # named cell styles: display name (else name) → style name
     added_named::Vector{Int32}        # named cell styles ODSFiles added, in order (styles.xml's office:styles)
+    resolved::Dict{Tuple{Int32,Bool},NTuple{3,Dict{String,String}}}   # `resolved_props` by (id, defaults); read-only
 end
 
 """

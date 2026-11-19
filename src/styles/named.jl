@@ -131,6 +131,7 @@ function _register_named!(st::StyleIndex, name::String, display::String, cs::Cel
     push!(sh.automatic, false)
     push!(sh.added_named, id)
     sh.display[display] = name
+    empty!(sh.resolved)          # a style naming this one as its parent now resolves through it
     return id
 end
 
@@ -144,17 +145,7 @@ has_named_styles(st::StyleIndex) = (sh = st.sheet[1]; sh !== nothing && !isempty
 # The added data styles the added named styles use, with those their `style:map`s apply.
 function _named_data_styles(sh::StyleSheet)
     isempty(sh.added_named) && return Set{String}()
-    need = Set{String}()
-    todo = String[sh.cells[id + 1].datastyle for id in sh.added_named]
-    while !isempty(todo)
-        n = pop!(todo)
-        (isempty(n) || n in need || !haskey(sh.datastyles, n)) && continue
-        push!(need, n)
-        for m in eachmatch(r"style:apply-style-name=\"([^\"]*)\"", sh.datastyles[n])
-            push!(todo, XML.unescape(m.captures[1]))
-        end
-    end
-    return intersect!(need, Set(sh.added_data))
+    return intersect!(_data_closure(sh, (sh.cells[id + 1].datastyle for id in sh.added_named)), Set(sh.added_data))
 end
 
 """

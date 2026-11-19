@@ -50,7 +50,10 @@ writetable("out.ods", dt; sheetname = "Costs")   # write it back
   row. An edited file keeps everything ODSFiles does not change exactly as it was.
 - **Formats:** `.ods`, flat `.fods` and `.ots` templates; ODF 1.4 (as LibreOffice writes)
   or 1.3.
+- **Formatting:** fonts, fills, borders, alignment, number formats (shown as LibreOffice
+  shows them), named cell styles, merged cells, column widths, row heights and autofit,
+  with XLSX.jl's functions.
 - **Speed:** comparable with XLSX.jl on XLSX.jl's own benchmarks.
 
-Formatting (fonts, fills, borders, number formats), sheet operations and rich objects
-(comments, images, charts) are planned.
+Sheet operations, conditional formats and rich objects (comments, images, charts) are
+planned.

@@ -69,6 +69,8 @@ end
 ## Writing a new file
 
 ```julia
+using Dates
+
 xf = newods("Results")
 sh = xf["Results"]
 sh["A1"] = "Name"
@@ -85,6 +87,21 @@ Or write a whole table at once:
 writetable("results.ods", df; sheetname = "Results")
 writetable("all.ods", "Results" => df, "Notes" => notes)
 ```
+
+## Formatting
+
+XLSX.jl's formatting functions work on ODS cells, and so do LibreOffice's named styles:
+
+```julia
+setFont(sh, "A1:B1"; bold = true)
+setFill(sh, "A1:B1"; pattern = "solid", fgColor = "DDEEFF")
+setFormat(sh, "B2:B4"; format = "0.0")
+setColumnWidth(sh, "A"; width = 15)
+mergeCells(sh, "A6:B6")
+setCellStyle(sh, "A4", "Accent 1")
+```
+
+See [Formatting](guide/formatting.md) for the rest.
 
 ## Editing a file
 

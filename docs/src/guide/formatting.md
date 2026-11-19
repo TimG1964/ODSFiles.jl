@@ -25,6 +25,36 @@ ODSFiles.getText(s, "B1")      # "1,234.50"
 writeods("report.ods", xf)
 ```
 
+## Merged cells
+
+```julia
+mergeCells(s, "A1:C1")                 # A1 keeps its value; B1 and C1 are emptied and covered
+getMergedCells(s)                      # [A1:C1], or nothing
+isMergedCell(s, "B1")                  # true
+getMergedBaseCell(s, "B1")             # (baseCell = A1, baseValue = …)
+removeMergedCells(s, "A1:C1")          # or removeMergedCells(s) for every merge
+```
+
+A merge is an anchor cell and the cells it covers, as LibreOffice writes it. Covered cells
+keep their formatting. An explicit range may reach past the used area.
+
+## Column widths, row heights and autofit
+
+```julia
+setColumnWidth(s, "A:B"; width = 20)           # in characters, as in XLSX.jl
+setColumnWidth(s, "C"; width = 3, unit = :cm)  # or :mm, :in, :pt
+ODSFiles.getColumnWidth(s, "A1")               # 20.7109375, as XLSX.jl reports it
+setRowHeight(s, 1; height = 30)                # in points
+autofitColumns(s)                              # LibreOffice's optimal width for every column
+
+writetable("out.ods", df; column_widths = [12, 30], column_formats = Dict("price" => "#,##0.00"))
+```
+
+ODF widths are lengths. A character is the width LibreOffice gives one when it opens an
+XLSX.jl file, so a width looks the same in both. [`autofitColumns`](@ref) measures each
+cell's text as LibreOffice shows it, in the cell's font. `column_widths` and
+`column_formats` also work when streaming.
+
 ## Named cell styles
 
 ODF documents have named cell styles, the ones LibreOffice shows in its Styles deck: "Default",

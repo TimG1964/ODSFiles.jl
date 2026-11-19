@@ -18,6 +18,15 @@ indexing, `getcell`, `getcellrange`, `eachrow`, `iserror`, `geterror`, `setdata!
 `writetable`, `writetable!`, `addsheet!`, `writerow!`, `writerows!` and the Tables.jl
 interface.
 
+The formatting functions work as in XLSX.jl too, with the differences listed in
+[Formatting](guide/formatting.md):
+- `setFont`, `setFill`, `setBorder`, `setAlignment`, `setFormat` and their getters
+- the `setUniform*` variants and `setOutsideBorder`
+- `getText`
+- `mergeCells` and the other merge functions
+- `setColumnWidth`, `setRowHeight`, their getters and `autofitColumns`
+- `writetable`'s `column_widths` and `column_formats`
+
 ## Differences
 
 - **References** print in LibreOffice's notation (`Sheet1.A1`); Excel's (`Sheet1!A1`) is
@@ -32,6 +41,9 @@ interface.
 - **Saving an edited file** keeps everything not edited, rather than rewriting the file.
 - **`display_text=false`** (no XLSX.jl counterpart) writes smaller files; see
   [Saving and writing](@ref).
-- **Not yet available:** formatting, sheet operations, Excel-style tables, comments,
-  images and charts, and the table and layout keywords of `writetable` (`as_table`,
-  `column_widths`, `freeze_header`, ...).
+- **Formatting** works on ODF's styles: setters return a style name, getters work on
+  read-only files, and empty cells and whole columns are formatted as LibreOffice formats
+  them. ODSFiles also has named cell styles ([`setCellStyle`](@ref), [`addCellStyle!`](@ref)),
+  which XLSX.jl lacks. See [Formatting](guide/formatting.md).
+- **Not yet available:** sheet operations, Excel-style tables, conditional formats,
+  comments, images and charts, and `writetable`'s `as_table` and `freeze_header`.

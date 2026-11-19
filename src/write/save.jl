@@ -40,7 +40,7 @@ function new_content_xml(xf::ODSFile, version; display::Bool = true)
     body = _body(xf; display)            # first: writing may add styles
     svg, faces = _faces(xf)
     return string(_XMLDECL, "<office:document-content", _NS_DECL, svg, " office:version=\"", version, "\">",
-                  faces, "<office:automatic-styles>", added_styles_xml(xf.styles), "</office:automatic-styles>",
+                  faces, "<office:automatic-styles>", added_styles_xml(xf.styles, used_styles(xf)), "</office:automatic-styles>",
                   body, "</office:document-content>")
 end
 
@@ -52,6 +52,44 @@ new_styles_xml(version, named::AbstractString = "", ns::AbstractString = "", fac
            isempty(faces) ? "" : "<office:font-face-decls>$faces</office:font-face-decls>",
            replace(_STYLES_BODY, "</office:styles>" => named * "</office:styles>"),
            "<office:automatic-styles/><office:master-styles/></office:document-styles>")
+
+"""
+    used_styles(xf) -> Union{UsedStyles, Nothing}
+
+The cell, column and row styles the loaded sheets refer to, so that only the added styles in
+use are written (D-046). `nothing` when ODSFiles added none: then nothing is scanned. A
+sheet that was never loaded can't refer to an added style; its text is copied as it is.
+"""
+function used_styles(xf::ODSFile)
+    sh = xf.styles.sheet[1]
+    (sh === nothing || (isempty(sh.added) && all(ls -> isempty(ls.added), sh.lines))) && return nothing
+    u = UsedStyles()
+    for ws in _sheets(xf)
+        s = ws.store
+        if s !== nothing
+            for r in s.rows, run in r.runs
+                push!(u.ids, run.data.style)
+            end
+            for c in s.cols
+                c.default_style >= 0 && push!(u.ids, c.default_style)
+            end
+        end
+        f = ws.formats
+        f === nothing && continue
+        for r in f.cells, run in r.runs
+            run.data.style >= 0 && push!(u.ids, run.data.style)
+        end
+        for c in f.cols
+            c.default >= 0 && push!(u.ids, c.default)
+            push!(u.cols, c.style)
+        end
+        for r in f.rows
+            r.default >= 0 && push!(u.ids, r.default)
+            push!(u.rows, r.style)
+        end
+    end
+    return u
+end
 
 # A new file's styles.xml, with the named styles ODSFiles added (D-045).
 function _new_styles(xf::ODSFile, version)
@@ -67,7 +105,7 @@ function new_flat_xml(xf::ODSFile, version, mediatype; display::Bool = true)
     body = _body(xf; display)
     svg, faces = _faces(xf)
     return string(_XMLDECL, "<office:document", _NS_DECL, svg, " office:version=\"", version, "\" office:mimetype=\"", mediatype, "\">",
-                  _meta_body(), faces, replace(_STYLES_BODY, "</office:styles>" => named_styles_xml(xf.styles) * "</office:styles>"), "<office:automatic-styles>", added_styles_xml(xf.styles), "</office:automatic-styles>",
+                  _meta_body(), faces, replace(_STYLES_BODY, "</office:styles>" => named_styles_xml(xf.styles) * "</office:styles>"), "<office:automatic-styles>", added_styles_xml(xf.styles, used_styles(xf)), "</office:automatic-styles>",
                   body, "</office:document>")
 end
 
