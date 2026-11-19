@@ -25,3 +25,5 @@ large	readfile	271.99	290.00	1.066	308.1	530.0
 large	eachrow	387.92	57.63	0.149	210.8	0.0
 large	single_cell	306.42	0.01	0.000	205.5	0.0
 large	writetable	6397.00	5467.95	0.855	3654.2	4896.3
+large	writetable_only	3314.94	2793.02	0.843	2833.2	3202.4
+large	writetable_streaming	1241.75	1525.12	1.228	2101.5	95.0
