@@ -73,6 +73,7 @@ include("styles/numberstyle.jl")
 include("styles/format.jl")
 include("styles/merge.jl")
 include("styles/layout.jl")
+include("styles/named.jl")
 include("write/xmlout.jl")
 include("write/patch.jl")
 include("write/save.jl")
@@ -94,11 +95,12 @@ export
     setFormat, setUniformFormat,
     setUniformFont, setUniformBorder, setUniformFill, setUniformAlignment, setUniformStyle,
     getMergedCells, isMergedCell, getMergedBaseCell, mergeCells, removeMergedCells,
-    setColumnWidth, setRowHeight, autofitColumns
+    setColumnWidth, setRowHeight, autofitColumns,
+    setCellStyle, addCellStyle!
 
 @static if VERSION >= v"1.11"
     eval(Meta.parse("public getcell, getcellrange, getFormula, get_dimension, ODSError, Cell, EmptyCell, DataTable, TableRow, TableRowIterator, SheetRow, StreamWriter, StreamSheet, " *
-                    "getFont, getBorder, getFill, getAlignment, getFormat, getText, getDefaultFont, setOutsideBorder, CellFont, CellFill, CellBorder, CellAlignment, CellFormat, getColumnWidth, getRowHeight"))
+                    "getFont, getBorder, getFill, getAlignment, getFormat, getText, getDefaultFont, setOutsideBorder, CellFont, CellFill, CellBorder, CellAlignment, CellFormat, getColumnWidth, getRowHeight, getCellStyle"))
 end
 
 include("precompile.jl")

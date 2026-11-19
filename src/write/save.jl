@@ -44,12 +44,21 @@ function new_content_xml(xf::ODSFile, version; display::Bool = true)
                   body, "</office:document-content>")
 end
 
-# (`named`: more named styles for office:styles, as a streamed file's column widths and
-# formats, D-042; `ns`: namespace declarations they need)
-new_styles_xml(version, named::AbstractString = "", ns::AbstractString = "") =
+# (`named`: more named styles for office:styles, as a streamed file's column formats (D-042)
+# or the named styles ODSFiles added (D-045); `ns`: namespace declarations they need; `faces`:
+# the font faces they name)
+new_styles_xml(version, named::AbstractString = "", ns::AbstractString = "", faces::AbstractString = "") =
     string(_XMLDECL, "<office:document-styles", _NS_DECL, ns, " office:version=\"", version, "\">",
+           isempty(faces) ? "" : "<office:font-face-decls>$faces</office:font-face-decls>",
            replace(_STYLES_BODY, "</office:styles>" => named * "</office:styles>"),
            "<office:automatic-styles/><office:master-styles/></office:document-styles>")
+
+# A new file's styles.xml, with the named styles ODSFiles added (D-045).
+function _new_styles(xf::ODSFile, version)
+    fx = faces_xml(_named_faces(xf.styles))
+    ns = (isempty(fx) ? "" : " xmlns:svg=\"$_SVG_NS\"") * (_needs_loext(xf.styles) ? " xmlns:loext=\"$_LOEXT_NS\"" : "")
+    return new_styles_xml(version, named_styles_xml(xf.styles), ns, fx)
+end
 
 new_meta_xml(version) =
     string(_XMLDECL, "<office:document-meta", _NS_DECL, " office:version=\"", version, "\">", _meta_body(), "</office:document-meta>")
@@ -58,7 +67,7 @@ function new_flat_xml(xf::ODSFile, version, mediatype; display::Bool = true)
     body = _body(xf; display)
     svg, faces = _faces(xf)
     return string(_XMLDECL, "<office:document", _NS_DECL, svg, " office:version=\"", version, "\" office:mimetype=\"", mediatype, "\">",
-                  _meta_body(), faces, _STYLES_BODY, "<office:automatic-styles>", added_styles_xml(xf.styles), "</office:automatic-styles>",
+                  _meta_body(), faces, replace(_STYLES_BODY, "</office:styles>" => named_styles_xml(xf.styles) * "</office:styles>"), "<office:automatic-styles>", added_styles_xml(xf.styles), "</office:automatic-styles>",
                   body, "</office:document>")
 end
 
@@ -92,10 +101,14 @@ function _patched_parts(xf::ODSFile; display::Bool = true)
             push!(parts, PackagePart(name, UInt8[]; mediatype = get(mts, name, ""), compress = false))
             continue
         end
-        data = name == "content.xml" ? content : read_bytes(cont, name)
+        data = name == "content.xml" ? content :
+               name == "styles.xml" && has_named_styles(xf.styles) ? patched_styles(xf, String(read_bytes(cont, name))) :
+               read_bytes(cont, name)
         mt = get(mts, name, guess_mediatype(name))
         push!(parts, PackagePart(name, data; mediatype = isempty(mt) ? guess_mediatype(name) : mt))
     end
+    # a package without styles.xml gets one when it needs named styles
+    has_named_styles(xf.styles) && !("styles.xml" in partnames(cont)) && push!(parts, PackagePart("styles.xml", _new_styles(xf, xf.version in WRITABLE_ODF_VERSIONS ? xf.version : DEFAULT_ODF_VERSION)))
     return parts
 end
 
@@ -130,7 +143,7 @@ function writeods(dest::Union{AbstractString,IO}, xf::ODSFile; overwrite::Bool =
             write_flat(dest, new_flat_xml(xf, version, mt; display))
         else
             parts = [PackagePart("content.xml", new_content_xml(xf, version; display)),
-                     PackagePart("styles.xml", new_styles_xml(version)),
+                     PackagePart("styles.xml", _new_styles(xf, version)),
                      PackagePart("meta.xml", new_meta_xml(version))]
             write_package(dest, parts; mediatype = mt, version)
         end

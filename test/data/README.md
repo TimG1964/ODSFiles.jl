@@ -7,6 +7,7 @@ Regenerate them all with `fixtures/make_fixtures.sh` in the workspace root (D-01
 | `lo-scenarios.ods`, `.fods`, `.ots` | LibreOffice | experiment 004's 15 hand-written scenario sheets (`fixtures/make_scenarios_fods.jl`), re-saved by LibreOffice headless |
 | `lo-values.ods`, `.fods` | LibreOffice | experiment 007's 78 value and text cases (`experiments/007-lo-cell-values/build.jl`), re-saved |
 | `lo-tables.ods`, `.fods` | LibreOffice | `fixtures/make_tables_fods.jl`: a table with gaps, named ranges and expressions (workbook and sheet-local), a merge, a hidden sheet, a quoted sheet name, formulas, re-saved |
+| `lo-named-styles.ods`, `.fods` | LibreOffice (macro) | experiment 018: built-in styles applied over direct formatting, and user-defined styles ("My Style", "a&b", …), saved by its `Module1.bas` (`experiments/018-lo-named-styles/run.sh`) |
 | `formula/lo-syntax.tsv`, `lo-names.tsv`, `lo-names2.tsv` | LibreOffice (`=FORMULA()`) | experiment 008: stored OpenFormula next to LibreOffice's UI notation; the oracle of `getFormula` |
 | `core/*.tsv` | Excel 365 | copied from XLSX.jl (see `records/provenance.md`) |
 

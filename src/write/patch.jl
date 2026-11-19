@@ -8,7 +8,8 @@
 #     number-columns-repeated split where needed), edited cells are written from the store.
 #     Rows and columns beyond the original ones are added after the last row / column.
 #   - new sheets, added after the last sheet
-#   - ODSFiles's typed styles, added to office:automatic-styles
+#   - ODSFiles's typed and formatting styles, added to office:automatic-styles; named
+#     styles (D-045) are added to styles.xml (`patched_styles`), or to a flat file's office:styles
 #   - namespace declarations the new XML needs, added to the root element
 # Original text is reached through XML.jl's `sourcespan` (zero-copy, D-009).
 
@@ -550,57 +551,97 @@ const _NAMESPACES = [
 ]
 
 """
-    patched_content(xf::ODSFile) -> String
+    _top_elements(xml) -> (src, rootspan, children)
 
-The content.xml (or flat document) of a file that was read, with its edits, new sheets
-and new styles (D-023).
+The source of an XML document, its root element's span, and the root's first child element
+of each tag (`LazyNode`s).
 """
-function patched_content(xf::ODSFile; display::Bool = true)
-    c = XML.Cursor(xf.content)
+function _top_elements(xml::AbstractString)
+    c = XML.Cursor(xml)
     while XML.next!(c) !== nothing
         XML.nodetype(c) === XML.Element && break
     end
     root = XML.LazyNode(c)
     src = parent(XML.sourcetext(root))
-    rootspan = XML.sourcespan(root)
-    autostyles = nothing; body = nothing; facedecls = nothing
+    kids = Dict{String,Any}()
     XML.for_each_child!(c) do ch
         XML.nodetype(ch) === XML.Element || return
         t = XML.tag(ch)
-        t == "office:font-face-decls" && (facedecls = XML.LazyNode(ch))
-        t == "office:automatic-styles" && (autostyles = XML.LazyNode(ch))
-        t == "office:body" && (body = XML.LazyNode(ch))
+        haskey(kids, t) || (kids[t] = XML.LazyNode(ch))
         XML.skip_element!(ch)
     end
-    splices = Tuple{Int,Int,String}[]      # (first, last, replacement); last = first - 1 inserts
-    # namespaces the written XML needs
+    return src, XML.sourcespan(root), kids
+end
+
+# The namespace declarations the written XML needs, added to the root's start tag.
+function _ns_splice!(splices, src::AbstractString, rootspan, svg::Bool, loext::Bool)
     roottext = SubString(src, first(rootspan), last(rootspan))
     tagend = first(rootspan) - 1 + _start_tag_end(roottext)
     tagend_at = src[prevind(src, tagend)] == '/' ? prevind(src, tagend) : tagend
     starttag = SubString(src, first(rootspan), tagend)
     ns = join(" xmlns:$p=\"$u\"" for (p, u) in _NAMESPACES if !occursin("xmlns:$p=", starttag))
-    fx = added_faces_xml(xf.styles)
-    !isempty(fx) && !occursin("xmlns:svg=", starttag) && (ns *= " xmlns:svg=\"$_SVG_NS\"")
-    _needs_loext(xf.styles) && !occursin("xmlns:loext=", starttag) && (ns *= " xmlns:loext=\"$_LOEXT_NS\"")
+    svg && !occursin("xmlns:svg=", starttag) && (ns *= " xmlns:svg=\"$_SVG_NS\"")
+    loext && !occursin("xmlns:loext=", starttag) && (ns *= " xmlns:loext=\"$_LOEXT_NS\"")
     isempty(ns) || push!(splices, (tagend_at, tagend_at - 1, ns))
-    # font faces (phase 4): in office:font-face-decls, which comes before the automatic styles
-    if !isempty(fx)
-        if facedecls === nothing
-            anchor = something(autostyles, body, Some(nothing))
-            anchor === nothing && throw(ODSError("The document has no office:body."))
-            at = first(XML.sourcespan(anchor))
-            push!(splices, (at, at - 1, "<office:font-face-decls>$fx</office:font-face-decls>"))
+    return
+end
+
+# Appends `xml` to the content of element `node`, or, if there is none, inserts a new `tag`
+# element holding it before `anchor`.
+function _append_splice!(splices, src::AbstractString, node, tag::AbstractString, xml::AbstractString, anchor)
+    if node === nothing
+        anchor === nothing && throw(ODSError("The document has no office:body."))
+        at = first(XML.sourcespan(anchor))
+        push!(splices, (at, at - 1, "<$tag>$xml</$tag>"))
+    else
+        sp = XML.sourcespan(node)
+        text = SubString(src, first(sp), last(sp))
+        if endswith(text, "/>")
+            push!(splices, (first(sp), last(sp), _retag(text, "", nothing; open = true) * xml * "</$tag>"))
         else
-            fsp = XML.sourcespan(facedecls)
-            ftext = SubString(src, first(fsp), last(fsp))
-            if endswith(ftext, "/>")
-                push!(splices, (first(fsp), last(fsp), _retag(ftext, "", nothing; open = true) * fx * "</office:font-face-decls>"))
-            else
-                at = first(fsp) - 1 + findlast("</", ftext)[1]
-                push!(splices, (at, at - 1, fx))
-            end
+            at = first(sp) - 1 + findlast("</", text)[1]
+            push!(splices, (at, at - 1, xml))
         end
     end
+    return
+end
+
+# `src` with the splices (first, last, replacement; last = first - 1 inserts) made. Splices
+# at the same place keep their order.
+function _apply_splices(src::AbstractString, splices::Vector{Tuple{Int,Int,String}})
+    sort!(splices; by = x -> (x[1], x[2]))
+    out = IOBuffer(sizehint = ncodeunits(src) + sum(s -> ncodeunits(s[3]), splices; init = 0))
+    pos = firstindex(src)
+    for (a, b, rep) in splices
+        a > pos && print(out, SubString(src, pos, prevind(src, a)))
+        print(out, rep)
+        pos = b >= a ? nextind(src, b) : max(pos, a)
+    end
+    pos <= lastindex(src) && print(out, SubString(src, pos))
+    return String(take!(out))
+end
+
+"""
+    patched_content(xf::ODSFile) -> String
+
+The content.xml (or flat document) of a file that was read, with its edits, new sheets
+and new styles (D-023). A flat document also gets the named styles ODSFiles added (D-045).
+"""
+function patched_content(xf::ODSFile; display::Bool = true)
+    src, rootspan, kids = _top_elements(xf.content)
+    autostyles = get(kids, "office:automatic-styles", nothing)
+    body = get(kids, "office:body", nothing)
+    facedecls = get(kids, "office:font-face-decls", nothing)
+    splices = Tuple{Int,Int,String}[]      # (first, last, replacement); last = first - 1 inserts
+    fx = added_faces_xml(xf.styles)
+    _ns_splice!(splices, src, rootspan, !isempty(fx), _needs_loext(xf.styles))
+    # font faces (phase 4): in office:font-face-decls, which comes before the styles
+    stylesnode = get(kids, "office:styles", nothing)
+    isempty(fx) || _append_splice!(splices, src, facedecls, "office:font-face-decls", fx,
+                                   something(stylesnode, autostyles, body, Some(nothing)))
+    # named styles (a flat document holds office:styles), before the automatic styles
+    nx = xf.container.format === :fods ? named_styles_xml(xf.styles) : ""
+    isempty(nx) || _append_splice!(splices, src, stylesnode, "office:styles", nx, something(autostyles, body, Some(nothing)))
     # edited sheets
     last_table_end = 0
     for ws in _sheets(xf)
@@ -617,34 +658,45 @@ function patched_content(xf::ODSFile; display::Bool = true)
         at = last_table_end > 0 ? nextind(src, last_table_end) : _spreadsheet_end(body, src)
         push!(splices, (at, at - 1, String(take!(io))))
     end
-    # typed styles
+    # typed and formatting styles
     sx = added_styles_xml(xf.styles)
     if !isempty(sx)
-        if autostyles === nothing
-            body === nothing && throw(ODSError("The document has no office:body."))
-            at = first(XML.sourcespan(body))
-            push!(splices, (at, at - 1, "<office:automatic-styles>$sx</office:automatic-styles>"))
-        else
-            asp = XML.sourcespan(autostyles)
-            atext = SubString(src, first(asp), last(asp))
-            if endswith(atext, "/>")
-                push!(splices, (first(asp), last(asp), _retag(atext, "", nothing; open = true) * sx * "</office:automatic-styles>"))
-            else
-                at = first(asp) - 1 + findlast("</", atext)[1]
-                push!(splices, (at, at - 1, sx))
-            end
+        _append_splice!(splices, src, autostyles, "office:automatic-styles", sx, body)
+    end
+    return _apply_splices(src, splices)
+end
+
+"""
+    patched_styles(xf::ODSFile, xml) -> String
+
+A file's styles.xml (`xml`) with the named styles ODSFiles added, their data styles in
+`office:styles` and the font faces they name in `office:font-face-decls` (D-045, F-040).
+Everything else is kept as it was.
+"""
+function patched_styles(xf::ODSFile, xml::AbstractString)
+    src, rootspan, kids = _top_elements(xml)
+    splices = Tuple{Int,Int,String}[]
+    decls = get(kids, "office:font-face-decls", nothing)
+    declared = Set{String}()
+    if decls !== nothing
+        sp = XML.sourcespan(decls)
+        for m in eachmatch(r"<style:font-face\s[^>]*?style:name=\"([^\"]*)\"", SubString(src, first(sp), last(sp)))
+            push!(declared, XML.unescape(m.captures[1]))
         end
     end
-    sort!(splices; by = x -> (x[1], x[2]))
-    out = IOBuffer(sizehint = ncodeunits(src) + sum(s -> ncodeunits(s[3]), splices; init = 0))
-    pos = firstindex(src)
-    for (a, b, rep) in splices
-        a > pos && print(out, SubString(src, pos, prevind(src, a)))
-        print(out, rep)
-        pos = b >= a ? nextind(src, b) : max(pos, a)
+    fx = faces_xml(filter(n -> !(n in declared), _named_faces(xf.styles)))
+    _ns_splice!(splices, src, rootspan, !isempty(fx), _needs_loext(xf.styles))
+    stylesnode = get(kids, "office:styles", nothing)
+    after = something(get(kids, "office:automatic-styles", nothing), get(kids, "office:master-styles", nothing), Some(nothing))
+    isempty(fx) || _append_splice!(splices, src, decls, "office:font-face-decls", fx, something(stylesnode, after, Some(nothing)))
+    if stylesnode === nothing && after === nothing
+        # a styles.xml with nothing but its root: the styles go before its end tag
+        at = first(findlast("</", SubString(src, first(rootspan), last(rootspan)))) + first(rootspan) - 1
+        push!(splices, (at, at - 1, "<office:styles>$(named_styles_xml(xf.styles))</office:styles>"))
+    else
+        _append_splice!(splices, src, stylesnode, "office:styles", named_styles_xml(xf.styles), after)
     end
-    pos <= lastindex(src) && print(out, SubString(src, pos))
-    return String(take!(out))
+    return _apply_splices(src, splices)
 end
 
 # The index of `</office:spreadsheet>` in the body, where sheets are added to a document

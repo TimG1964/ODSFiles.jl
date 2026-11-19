@@ -82,6 +82,8 @@ needs them (`stylesheet`, styles/stylesheet.jl):
   `table-row` families)
 - `default_cell`: the document's default cell properties (`style:default-style`)
 - `faces` / `added_faces`: the font faces declared, and those ODSFiles added
+- `display`: the named cell styles, by the name LibreOffice shows; `added_named`: those
+  ODSFiles added (D-045), written to styles.xml
 """
 mutable struct StyleSheet
     cells::Vector{CellStyle}
@@ -100,6 +102,8 @@ mutable struct StyleSheet
     code_styles::Dict{String,String}  # number format codes → their added data style ("" for General)
     numfmt_ids::Dict{String,Int}      # custom number format codes → their numFmtId (164 on), as getFormat meets them
     needs_loext::Bool                 # added data styles use LibreOffice's `loext:` attributes
+    display::Dict{String,String}      # named cell styles: display name (else name) → style name
+    added_named::Vector{Int32}        # named cell styles ODSFiles added, in order (styles.xml's office:styles)
 end
 
 """

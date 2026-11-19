@@ -25,6 +25,32 @@ ODSFiles.getText(s, "B1")      # "1,234.50"
 writeods("report.ods", xf)
 ```
 
+## Named cell styles
+
+ODF documents have named cell styles, the ones LibreOffice shows in its Styles deck: "Default",
+"Heading 1", "Good", and styles of your own. XLSX.jl has nothing like them.
+- [`setCellStyle`](@ref) applies a style.
+- [`addCellStyle!`](@ref) defines one, from the same keywords the setters take.
+- [`getCellStyle`](@ref ODSFiles.getCellStyle) gives a cell's style.
+
+```julia
+addCellStyle!(xf, "Total"; parent = "Default",
+              font = (bold = true, size = 12), fill = (pattern = "solid", fgColor = "FFF2CC"),
+              border = (top = ["style" => "double"],), format = "#,##0.00")
+setCellStyle(s, "A10:B10", "Total")
+setCellStyle(s, "A1", "Heading 1")      # one of LibreOffice's built-in styles
+ODSFiles.getCellStyle(s, "A1")         # "Heading 1"
+```
+
+- **Direct formatting stays on top**, as in LibreOffice. Applying a style removes the cell's
+  own settings only for what the style sets (its font size, say). The rest stays, including
+  the number format unless the style has one.
+- **LibreOffice's built-in styles** are added, in LibreOffice's own definitions, to a file
+  that lacks them: Heading, Heading 1, Heading 2, Text, Note, Footnote, Hyperlink, Status,
+  Good, Neutral, Bad, Warning, Error, Accent, Accent 1 to 3, and Result.
+- **Names** are the ones LibreOffice shows. In the file, a name such as "My Style" is stored
+  as `My_20_Style`; either form is accepted.
+
 ## How it differs from XLSX.jl
 
 - **Empty cells are formatted**, as in LibreOffice. Whole columns and rows are formatted to

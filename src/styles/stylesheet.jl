@@ -30,8 +30,9 @@ function _build_stylesheet(styles::StyleIndex)
     lines = [LineStyles("table-column"), LineStyles("table-row")]
     defaults = [CellStyle("")]
     faces = Set{String}()
+    display = Dict{String,String}()
     for xml in styles.xmls
-        _scan_full_styles!(parsed, datas, lines, defaults, faces, xml)
+        _scan_full_styles!(parsed, datas, lines, defaults, faces, display, xml)
     end
     # what the read path knows of each data style (styleindex.jl)
     raw = Dict{String,_RawDataStyle}()
@@ -46,7 +47,8 @@ function _build_stylesheet(styles::StyleIndex)
     n = length(styles.names)
     sh = StyleSheet(Vector{CellStyle}(undef, n), fill(false, n), datas, datainfo, Dict{CellStyle,Int32}(),
                     Int32[], String[], Dict{Tuple{Int32,Symbol},Int32}(), Dict{String,String}(), lines,
-                    defaults[1], faces, String[], Dict{String,String}(), Dict{String,Int}(), false)
+                    defaults[1], faces, String[], Dict{String,String}(), Dict{String,Int}(), false,
+                    display, Int32[])
     for id in 0:n-1
         name = styles.names[id + 1]
         kind = get(typed, Int32(id), nothing)
@@ -67,7 +69,7 @@ end
 # Every table-cell, table-column and table-row style and data style of a document (up to
 # office:body), with their source.
 function _scan_full_styles!(parsed, datas, lines::Vector{LineStyles}, defaults::Vector{CellStyle}, faces::Set{String},
-                            xml::AbstractString)
+                            display::Dict{String,String}, xml::AbstractString)
     c = XML.Cursor(xml)
     while XML.next!(c) !== nothing
         XML.nodetype(c) === XML.Element && break
@@ -92,6 +94,10 @@ function _scan_full_styles!(parsed, datas, lines::Vector{LineStyles}, defaults::
                         fam = _attr_of(attrs, "style:family")
                         if fam == "table-cell"
                             isempty(name) || (parsed[name] = (parse_cell_style(text), auto))
+                            if !auto && !isempty(name)
+                                dn = _attr_of(attrs, "style:display-name")
+                                display[dn === nothing ? name : XML.unescape(dn)] = name
+                            end
                         elseif fam == "table-column" || fam == "table-row"
                             isempty(name) || _add_line_style!(lines[fam == "table-column" ? 1 : 2], name, attrs, text, auto)
                         end
@@ -194,9 +200,15 @@ single quotes when it holds a space), for `office:font-face-decls`.
 """
 function added_faces_xml(styles::StyleIndex)
     sh = styles.sheet[1]
-    (sh === nothing || isempty(sh.added_faces)) && return ""
+    sh === nothing && return ""
+    return faces_xml(sh.added_faces)
+end
+
+# `style:font-face` declarations of the faces `names`.
+function faces_xml(names)
+    isempty(names) && return ""
     io = IOBuffer()
-    for n in sh.added_faces
+    for n in names
         print(io, "<style:font-face style:name=\""); _escape_attr(io, n)
         print(io, "\" svg:font-family=\""); _escape_attr(io, occursin(' ', n) ? "'$n'" : n); print(io, "\"/>")
     end
@@ -303,8 +315,9 @@ function added_styles_xml(styles::StyleIndex)
         _write_props(io, ls.family == "table-column" ? "style:table-column-properties" : "style:table-row-properties", ls.props[name])
         print(io, "</style:style>")
     end
+    named = _named_data_styles(sh)          # these go to office:styles, with the named styles (D-045)
     for name in sh.added_data
-        print(io, sh.datastyles[name])
+        name in named || print(io, sh.datastyles[name])
     end
     for id in sh.added
         write_cell_style(io, style_name(styles, id), sh.cells[id + 1])

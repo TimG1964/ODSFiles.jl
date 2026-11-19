@@ -123,6 +123,14 @@ getRowHeight
 autofitColumns
 ```
 
+Named cell styles:
+
+```@docs
+setCellStyle
+getCellStyle
+addCellStyle!
+```
+
 Merged cells:
 
 ```@docs
