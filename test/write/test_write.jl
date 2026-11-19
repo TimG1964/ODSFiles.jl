@@ -129,7 +129,7 @@ end
     ws[r, 2] = Date(2000, 1, 2)                 # a date into a date cell keeps its style
     @test getcell(ws, r, 2).style == "cD"
     ws[r, 2] = 5                                # a number into a date cell: Default
-    @test getcell(ws, r, 2).style == "Default" && ws[r, 2] === 5
+    @test getcell(ws, r, 2).style == "Default" && ws[r, 2] === Int64(5)
     r2 = findfirst(==("float 7 style=N2"), vec(ws["A1:A78"]))
     ws[r2, 2] = 3                               # a number keeps its number format
     @test getcell(ws, r2, 2).style == "cN2" && ws[r2, 2] === 3.0
@@ -137,7 +137,7 @@ end
     @test getcell(ws, r2, 2).style == "odsf-date"
     p = writeods(tmp("styles.ods"), xf)
     back = readods(p)["V"]
-    @test back[r, 2] === 5 && back[r2, 2] == Date(2000, 1, 1)
+    @test back[r, 2] === Int64(5) && back[r2, 2] == Date(2000, 1, 1)
     @test getcell(back, r2, 2).style == "odsf-date"
 end
 

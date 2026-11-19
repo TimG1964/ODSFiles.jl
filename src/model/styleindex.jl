@@ -49,10 +49,67 @@ struct _RawDataStyle
 end
 
 """
+    LineStyles
+
+The styles of one family of column or row styles: the properties element of each
+(`style:table-column-properties` / `style:table-row-properties`), by name; the automatic
+ones that say nothing else, by their properties (for deduplication); and the ones ODSFiles
+added, in order.
+"""
+struct LineStyles
+    family::String                    # "table-column" or "table-row"
+    props::Dict{String,PropSet}
+    dedup::Dict{PropSet,String}
+    added::Vector{String}
+end
+LineStyles(family::AbstractString) = LineStyles(String(family), Dict{String,PropSet}(), Dict{PropSet,String}(), String[])
+
+"""
+    StyleSheet
+
+The full cell styles of a document (phase 4), built from its XML the first time formatting
+needs them (`stylesheet`, styles/stylesheet.jl):
+
+- `cells[id + 1]`: the `CellStyle` of each style id of the `StyleIndex`
+- `automatic[id + 1]`: whether it is an automatic style (else a named one, or Default)
+- `datastyles`: the XML of each data style, by name; `datainfo`: what the read path knows of it
+- `dedup`: the automatic styles by their properties, so that equal styles are shared
+- `added` / `added_data`: the cell and data styles ODSFiles added, in order, written to
+  `office:automatic-styles` on save
+- `retyped`: derived styles already made for a style and a value kind (D-037)
+- `data_dedup`: the added data styles by their XML
+- `lines[1]` / `lines[2]`: the column and row styles (`LineStyles` of the `table-column` and
+  `table-row` families)
+- `default_cell`: the document's default cell properties (`style:default-style`)
+- `faces` / `added_faces`: the font faces declared, and those ODSFiles added
+"""
+mutable struct StyleSheet
+    cells::Vector{CellStyle}
+    automatic::Vector{Bool}
+    datastyles::Dict{String,String}
+    datainfo::Dict{String,DataStyleInfo}
+    dedup::Dict{CellStyle,Int32}
+    added::Vector{Int32}
+    added_data::Vector{String}
+    retyped::Dict{Tuple{Int32,Symbol},Int32}
+    data_dedup::Dict{String,String}   # added data styles by their XML (with `$NAME` for the name)
+    lines::Vector{LineStyles}         # [columns, rows]
+    default_cell::CellStyle           # the `style:default-style` of family table-cell (its properties)
+    faces::Set{String}                # the declared font faces (`style:font-face`), by name
+    added_faces::Vector{String}       # font faces ODSFiles declared, in order
+    code_styles::Dict{String,String}  # number format codes → their added data style ("" for General)
+    numfmt_ids::Dict{String,Int}      # custom number format codes → their numFmtId (164 on), as getFormat meets them
+    needs_loext::Bool                 # added data styles use LibreOffice's `loext:` attributes
+end
+
+"""
     StyleIndex
 
 The cell styles of a document, numbered. Style id 0 is the document's `Default` style (or no
 style at all); every other id names a cell style. `info[id + 1]` is its effective data style.
+`xmls` are the documents the index was read from (styles.xml and content.xml, or a flat
+document; the same strings the file holds, not copies), from which the full `StyleSheet` is
+built when formatting first needs it.
 """
 struct StyleIndex
     ids::Dict{String,Int32}           # cell style name → id
@@ -62,10 +119,13 @@ struct StyleIndex
     added::Dict{Symbol,Int32}         # ODSFiles's own typed styles (D-024), by kind, once added
     prefixes::Dict{Tuple{Int32,UInt8,Bool},String}   # the writer's cell prefixes (write/xmlout.jl)
     numbuf::Vector{UInt8}             # the writer's digit buffer (a document is written by one task at a time)
+    xmls::Vector{String}              # the XML the styles were read from
+    sheet::Vector{Union{Nothing,StyleSheet}}   # [the full styles], once built (phase 4)
 end
 
-StyleIndex() = StyleIndex(Dict{String,Int32}(), ["Default"], [NO_DATA_STYLE], Set{String}(), Dict{Symbol,Int32}(),
-                          Dict{Tuple{Int32,UInt8,Bool},String}(), zeros(UInt8, 64))
+StyleIndex(xmls::Vector{String} = String[]) =
+    StyleIndex(Dict{String,Int32}(), ["Default"], [NO_DATA_STYLE], Set{String}(), Dict{Symbol,Int32}(),
+               Dict{Tuple{Int32,UInt8,Bool},String}(), zeros(UInt8, 64), xmls, Union{Nothing,StyleSheet}[nothing])
 
 @inline style_info(s::StyleIndex, id::Integer) = @inbounds s.info[id + 1]
 @inline style_name(s::StyleIndex, id::Integer) = @inbounds s.names[id + 1]
@@ -105,7 +165,7 @@ function build_style_index(xmls::Union{Nothing,AbstractString}...)
     end
     names = sort!(collect(keys(cells)))
     filter!(!=("Default"), names)
-    idx = StyleIndex()
+    idx = StyleIndex(String[x for x in xmls if x !== nothing])
     # Default (id 0): the "Default" cell style, else the default style for table cells
     def = _cell_data_style(cells, "Default", default_data[])
     idx.info[1] = def === nothing ? NO_DATA_STYLE : data_info(def)

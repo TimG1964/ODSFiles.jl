@@ -78,12 +78,15 @@ function _set_cell!(ws::Worksheet, row::Int, col::Int, v)
     old = cell_data(s, row, col)
     styles = get_odsfile(ws).styles
     d = if old === nothing
-        encode_value(v, choose_style(styles, 0, v))
+        (v === missing || v === nothing) && return v      # nothing to remove
+        style, covered, cs, rs = _empty_cell_base(ws, row, col)
+        encode_value(v, choose_style(styles, style, v); colspan = cs, rowspan = rs, covered = covered != 0)
     else
         encode_value(v, choose_style(styles, old.style, v); colspan = old.colspan, rowspan = old.rowspan,
                      covered = (old.flags & F_COVERED) != 0)
     end
     store_set!(s, row, col, d)
+    _after_cell_edit!(ws, row, col, old, d)
     _mark_dirty!(ws, row, col)
     return v
 end
@@ -235,10 +238,11 @@ function setFormula(ws::Worksheet, ref::CellRef; val::AbstractString, raw::Bool 
     r, c = row_number(ref), column_number(ref)
     s = _cached_store(ws)
     old = cell_data(s, r, c)
-    style = old === nothing ? Int32(0) : old.style
-    d = CellData(CK_EMPTY, old === nothing ? 0x00 : (old.flags & F_COVERED), style, UInt64(0), nothing, f,
-                 old === nothing ? Int32(1) : old.colspan, old === nothing ? Int32(1) : old.rowspan)
+    style, covered, cs, rs = old === nothing ? _empty_cell_base(ws, r, c) :
+        (old.style, old.flags & F_COVERED, old.colspan, old.rowspan)
+    d = CellData(CK_EMPTY, covered, style, UInt64(0), nothing, f, cs, rs)
     store_set!(s, r, c, d)
+    _after_cell_edit!(ws, r, c, old, d)
     _mark_dirty!(ws, r, c)
     return f
 end

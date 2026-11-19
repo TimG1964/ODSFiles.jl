@@ -70,7 +70,7 @@ end
     @test Tables.columnnames(r) == [:id, :name, :value, :day, :flag]
     @test Tables.getcolumn(r, 2) == "a" && Tables.getcolumn(r, Int32(2)) == "a"
     ct = Tables.columntable(eachtablerow(ws))
-    @test ct.id == [1, 2, 3, 4] && ct.id isa Vector{Int}
+    @test ct.id == [1, 2, 3, 4] && ct.id isa Vector{Int64}   # D-016: Int64 on 32-bit too
     @test isequal(ct.name, ["a", "b", missing, "d"])
     @test Tables.columns(eachtablerow(ws, "B:C")).id == [1, 2, 3, 4]
     @test length(collect(eachtablerow(ws, "B:F"; stop_in_empty_row = false))) == 6

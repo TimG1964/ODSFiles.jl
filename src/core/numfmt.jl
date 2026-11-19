@@ -12,9 +12,13 @@
 #     calendar without Excel's 1900 leap-year bug, in which negative values are dates
 #     before the epoch. With `epoch = nothing` (the default) the behaviour is XLSX.jl's.
 #   - the cell/workbook glue (`_format_code`, `_cell_text`, `getText`) is left out.
+#   - phase 4: `_display_text(…; libreoffice=true)` renders as LibreOffice does (F-030,
+#     F-036): its General (`_general_lo`), figure-space padding, no point without decimals,
+#     `%%` scaling once, the 2-digit `e`, lower-case A/P, truncated and non-carrying seconds,
+#     signed elapsed times, and Julian dates before 1582-10-15.
 #
-# The rendering was checked against Excel 365 (test/data/core/number_formats_excel.tsv).
-# Whether LibreOffice renders the same codes the same way is Q-009.
+# The rendering was checked against Excel 365 (test/data/core/number_formats_excel.tsv),
+# and the LibreOffice mode against LibreOffice 26.8 (number_formats_libreoffice.tsv).
 
 struct _FmtToken
     kind::Symbol     # :lit :pad :fill :text :digit :point :comma :percent :exp :general
@@ -202,19 +206,19 @@ Gregorian calendar, as ODF's `table:null-date` defines them, and a negative day 
 is a date before the epoch rather than an error.
 """
 function _display_text(v, code::AbstractString; date1904::Bool=false,
-                       epoch::Union{Nothing,Dates.Date}=nothing, for_width::Bool=false,
+                       epoch::Union{Nothing,Dates.Date}=nothing, for_width::Bool=false, libreoffice::Bool=false,
                        sections::Union{Nothing,Vector{_FmtSection}}=_parse_numfmt(code))::String
     isnothing(sections) && (sections = _parse_numfmt("General"))
     textsec = _text_section(sections)
     if v isa Bool || v isa AbstractString
         s = v isa Bool ? (v ? "TRUE" : "FALSE") : String(v)
         isnothing(textsec) && return s
-        return _render_tokens(textsec.tokens, s, for_width)
+        return _render_tokens(textsec.tokens, s, for_width; lo = libreoffice)
     end
     x = Float64(v)
     sec, auto_minus = _number_section(sections, textsec, x)
-    isnothing(sec) && return _general(x)
-    return _render_section(sec, x, auto_minus, date1904, for_width; epoch)
+    isnothing(sec) && return libreoffice ? _general_lo(x) : _general(x)
+    return _render_section(sec, x, auto_minus, date1904, for_width; epoch, lo = libreoffice)
 end
 
 # The section text is shown with: a fourth section, or a last section holding `@`.
@@ -253,24 +257,24 @@ function _condition_holds((op, limit)::Tuple{String,Float64}, x::Float64)
 end
 
 function _render_section(sec::_FmtSection, x::Float64, auto_minus::Bool, date1904::Bool, for_width::Bool;
-                         epoch::Union{Nothing,Dates.Date}=nothing)::String
+                         epoch::Union{Nothing,Dates.Date}=nothing, lo::Bool=false)::String
     toks = sec.tokens
-    sec.isdate && return _render_date(toks, x, date1904, for_width; epoch)
+    sec.isdate && return _render_date(toks, x, date1904, for_width; epoch, lo)
     if any(t -> t.kind == :general, toks) || (sec.hastext && !any(t -> t.kind == :digit, toks))
-        g = _general(abs(x))
+        g = lo ? _general_lo(abs(x)) : _general(abs(x))
         sign = auto_minus && x < 0 ? "-" : ""
-        return sign * _render_tokens(toks, g, for_width; general=true)
+        return sign * _render_tokens(toks, g, for_width; general=true, lo)
     end
-    any(t -> t.kind == :digit, toks) || return _render_tokens(toks, "", for_width)
+    any(t -> t.kind == :digit, toks) || return _render_tokens(toks, "", for_width; lo)
     iexp = findfirst(t -> t.kind == :exp, toks)
-    !isnothing(iexp) && return _render_scientific(toks, iexp, x, auto_minus, for_width)
+    !isnothing(iexp) && return _render_scientific(toks, iexp, x, auto_minus, for_width; lo)
     islash = _fraction_slash(toks)
-    !isnothing(islash) && return _render_fraction(toks, islash, x, auto_minus, for_width)
-    return _render_decimal(toks, x, auto_minus, for_width)
+    !isnothing(islash) && return _render_fraction(toks, islash, x, auto_minus, for_width; lo)
+    return _render_decimal(toks, x, auto_minus, for_width; lo)
 end
 
 # Literals, padding and the text placeholder, for text or a value already formatted.
-function _render_tokens(toks::Vector{_FmtToken}, value::String, for_width::Bool; general::Bool=false)
+function _render_tokens(toks::Vector{_FmtToken}, value::String, for_width::Bool; general::Bool=false, lo::Bool=false)
     io = IOBuffer()
     for t in toks
         if t.kind == :text || (general && t.kind == :general)
@@ -346,6 +350,32 @@ function _general(x::Float64)::String
     return neg ? "-" * s : s
 end
 
+# LibreOffice's General ("Standard", F-030; fitted to experiment 012's 85 cases): whole
+# numbers below 2^53 in full; others with up to 15 significant digits, in scientific
+# notation from 1E+15, below 1E-9, or when more than 20 decimals would be needed. The
+# exponent has at least three digits when positive, two when negative.
+function _general_lo(x::Float64)::String
+    x == 0 && return "0"
+    a = abs(x)
+    sign = x < 0 ? "-" : ""
+    isinteger(a) && a < 2.0^53 && return sign * string(Int64(a))
+    if a < 1e15 && a >= 1e-9
+        N, e = _sig15(a)
+        i, f = _round_digits(N, e, 14 - e)
+        f = rstrip(f, '0')
+        length(f) <= 20 && return sign * _join_decimal(i, f)
+    end
+    N, e = if a < floatmin(Float64)          # subnormals: the digit they hold (5E-324)
+        m1, ex = split(sprint(io -> @printf(io, "%.0e", a)), 'e')
+        parse(Int64, m1) * Int64(10)^14, parse(Int, ex)
+    else
+        _sig15(a)
+    end
+    m = rstrip(string(N), '0')
+    mant = length(m) > 1 ? string(m[1], '.', m[2:end]) : m
+    return string(sign, mant, 'E', e < 0 ? '-' : '+', lpad(abs(e), e < 0 ? 2 : 3, '0'))
+end
+
 _join_decimal(i, f) = isempty(f) ? String(i) : string(i, ".", f)
 _sig_shown(sci::String) = length(rstrip(replace(first(split(sci, 'E')), "." => ""), '0'))
 
@@ -395,25 +425,28 @@ function _number_parts(toks::Vector{_FmtToken}, stop::Int)
     return (; ipoint, intend, thousands, scale, npercent, kinds)
 end
 
-function _render_decimal(toks::Vector{_FmtToken}, x::Float64, auto_minus::Bool, for_width::Bool)
+function _render_decimal(toks::Vector{_FmtToken}, x::Float64, auto_minus::Bool, for_width::Bool; lo::Bool=false)
     io = IOBuffer()
-    _write_decimal!(io, toks, length(toks), abs(x) , x < 0 && auto_minus, for_width)
+    _write_decimal!(io, toks, length(toks), abs(x) , x < 0 && auto_minus, for_width; lo)
     return String(take!(io))
 end
 
 # The number part of `toks[1:stop]` for `v ≥ 0`, with a minus sign if `minus` and the
 # number shown isn't zero. Returns how many integer digits the rounded number has, for
 # scientific notation.
-function _write_decimal!(io::IO, toks::Vector{_FmtToken}, stop::Int, v::Float64, minus::Bool, for_width::Bool)
+function _write_decimal!(io::IO, toks::Vector{_FmtToken}, stop::Int, v::Float64, minus::Bool, for_width::Bool; lo::Bool=false)
     p = _number_parts(toks, stop)
-    v *= 100.0^p.npercent / 1000.0^p.scale
+    # LibreOffice scales by 100 once however many `%` there are (F-030)
+    v *= 100.0^(lo ? min(p.npercent, 1) : p.npercent) / 1000.0^p.scale
     fracph = isnothing(p.ipoint) ? Int[] : [k for k in p.ipoint+1:stop if toks[k].kind == :digit]
     i, f = _round_fixed(v, length(fracph))
     minus && !_is_zero_digits(i, f) && print(io, '-')
     intdigits = i == "0" ? "" : i
     intph = [k for k in 1:p.intend if toks[k].kind == :digit]
-    slots = _int_slots(toks, intph, intdigits, p.thousands, for_width)
-    fracout = _frac_slots(toks, fracph, f, for_width)
+    slots = _int_slots(toks, intph, intdigits, p.thousands, for_width; lo)
+    fracout = _frac_slots(toks, fracph, f, for_width; lo)
+    # LibreOffice leaves out the point when no decimal is shown (`0.##` of 1 is `1`, F-030)
+    nopoint = lo && !isempty(fracph) && all(k -> isempty(fracout[k]), fracph)
     for k in 1:stop
         kind = p.kinds[k]
         t = toks[k]
@@ -421,7 +454,7 @@ function _write_decimal!(io::IO, toks::Vector{_FmtToken}, stop::Int, v::Float64,
             print(io, get(slots, k, get(fracout, k, "")))
         elseif kind == :point
             isempty(intph) && print(io, intdigits)   # no integer placeholders: the digits go here
-            print(io, '.')
+            nopoint || print(io, '.')
         elseif kind == :lit
             print(io, t.text)
         elseif kind == :pad
@@ -435,7 +468,7 @@ end
 
 # The text of each integer placeholder: digits from the right, the leftmost taking
 # any digits left over; `0` pads with a zero, `?` with a space, `#` with nothing.
-function _int_slots(toks, intph::Vector{Int}, digits::String, thousands::Bool, for_width::Bool)
+function _int_slots(toks, intph::Vector{Int}, digits::String, thousands::Bool, for_width::Bool; lo::Bool=false)
     slots = Dict{Int,String}()
     isempty(intph) && return slots
     nph = length(intph)
@@ -458,26 +491,27 @@ function _int_slots(toks, intph::Vector{Int}, digits::String, thousands::Bool, f
     for (j, k) in enumerate(intph)
         r = nph - j                       # placeholders to its right
         d = nd - r                        # its digit, counted from the left
-        s = d >= 1 ? string(digits[d]) : _pad(toks[k].text, for_width)
+        s = d >= 1 ? string(digits[d]) : _pad(toks[k].text, for_width, lo)
         j == 1 && nd > nph && (s = digits[1:nd-nph] * s)
         slots[k] = s
     end
     return slots
 end
 
-_pad(placeholder::AbstractString, for_width::Bool) =
-    placeholder == "0" ? "0" : placeholder == "?" ? (for_width ? "0" : " ") : ""
+# (LibreOffice pads `?` with U+2007 FIGURE SPACE, F-030)
+_pad(placeholder::AbstractString, for_width::Bool, lo::Bool=false) =
+    placeholder == "0" ? "0" : placeholder == "?" ? (for_width ? "0" : lo ? "\u2007" : " ") : ""
 
 # The text of each decimal placeholder: trailing zeros are left out by `#` and shown as
 # spaces by `?`.
-function _frac_slots(toks, fracph::Vector{Int}, f::AbstractString, for_width::Bool)
+function _frac_slots(toks, fracph::Vector{Int}, f::AbstractString, for_width::Bool; lo::Bool=false)
     slots = Dict{Int,String}()
     trailing = true
     for j in length(fracph):-1:1
         k = fracph[j]
         d = f[j]
         if trailing && d == '0' && toks[k].text != "0"
-            slots[k] = _pad(toks[k].text, for_width)
+            slots[k] = _pad(toks[k].text, for_width, lo)
         else
             trailing = false
             slots[k] = string(d)
@@ -490,7 +524,7 @@ end
 # Scientific notation
 #
 
-function _render_scientific(toks::Vector{_FmtToken}, iexp::Int, x::Float64, auto_minus::Bool, for_width::Bool)
+function _render_scientific(toks::Vector{_FmtToken}, iexp::Int, x::Float64, auto_minus::Bool, for_width::Bool; lo::Bool=false)
     v = abs(x)
     p = _number_parts(toks, iexp - 1)
     intph = [k for k in 1:p.intend if toks[k].kind == :digit]
@@ -501,7 +535,7 @@ function _render_scientific(toks::Vector{_FmtToken}, iexp::Int, x::Float64, auto
     for _ in 1:2   # once more if rounding carries the mantissa past its range
         io = IOBuffer()
         mantissa = v == 0 ? 0.0 : v / exp10(e)
-        nint = _write_decimal!(io, toks, iexp - 1, mantissa, x < 0 && auto_minus, for_width)
+        nint = _write_decimal!(io, toks, iexp - 1, mantissa, x < 0 && auto_minus, for_width; lo)
         nint <= step && break
         e += step
     end
@@ -533,7 +567,7 @@ function _fraction_slash(toks::Vector{_FmtToken})
     return nothing
 end
 
-function _render_fraction(toks::Vector{_FmtToken}, islash::Int, x::Float64, auto_minus::Bool, for_width::Bool)
+function _render_fraction(toks::Vector{_FmtToken}, islash::Int, x::Float64, auto_minus::Bool, for_width::Bool; lo::Bool=false)
     v = abs(x)
     # numerator: the placeholders just before the slash; integer part: those before them
     numstart = islash - 1
@@ -569,7 +603,7 @@ function _render_fraction(toks::Vector{_FmtToken}, islash::Int, x::Float64, auto
     if hasint && whole == 0 && num == 0
         intdigits = "0"                   # Excel shows the zero rather than nothing
     end
-    slots = _int_slots(toks, intph, intdigits, false, for_width)
+    slots = _int_slots(toks, intph, intdigits, false, for_width; lo)
     for k in 1:numstart-1
         t = toks[k]
         t.kind == :digit ? print(io, slots[k]) : t.kind == :lit ? print(io, t.text) :
@@ -577,11 +611,18 @@ function _render_fraction(toks::Vector{_FmtToken}, islash::Int, x::Float64, auto
     end
     if num == 0 && hasint
         # the fraction is shown as spaces of its width
-        print(io, " "^(length(numph) + 1 + length(dentoks)))
+        if lo     # each `?` as a figure space, the rest as spaces
+            for t in (toks[numph]..., _FmtToken(:lit, "/"), dentoks...)
+                print(io, t.kind == :digit && t.text == "?" ? '\u2007' : t.kind == :lit ? " "^length(t.text) : ' ')
+            end
+        else
+            print(io, " "^(length(numph) + 1 + length(dentoks)))
+        end
     else
-        print(io, lpad(string(num), length(numph), for_width ? '0' : ' '))
+        padc = for_width ? '0' : lo ? '\u2007' : ' '
+        print(io, lpad(string(num), length(numph), padc))
         print(io, '/')
-        print(io, fixed ? string(den) : rpad(string(den), length(dentoks), for_width ? '0' : ' '))
+        print(io, fixed ? string(den) : rpad(string(den), length(dentoks), padc))
     end
     for k in denend+1:length(toks)
         t = toks[k]
@@ -616,9 +657,10 @@ const _WEEKDAYS = ("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 # The year, month, day and weekday (1 for Sunday) of Excel's day number `days`. In the
 # 1900 system, day 0 is shown as 1900-01-00 and day 60 as 1900-02-29, as Excel shows
 # them: it takes 1900 to be a leap year.
-function _excel_ymd(days::Int, date1904::Bool, epoch::Union{Nothing,Dates.Date}=nothing)
+function _excel_ymd(days::Int, date1904::Bool, epoch::Union{Nothing,Dates.Date}=nothing; julian::Bool=false)
     if epoch !== nothing      # a plain Gregorian count from the epoch (ODF table:null-date)
         d = epoch + Dates.Day(days)
+        julian && d < Dates.Date(1582, 10, 15) && return (_julian_ymd(d)..., Dates.dayofweek(d) % 7 + 1)
         return Dates.year(d), Dates.month(d), Dates.day(d), Dates.dayofweek(d) % 7 + 1
     end
     if date1904
@@ -632,9 +674,21 @@ function _excel_ymd(days::Int, date1904::Bool, epoch::Union{Nothing,Dates.Date}=
     return Dates.year(d), Dates.month(d), Dates.day(d), weekday
 end
 
+# The Julian calendar date of a (proleptic Gregorian) date: LibreOffice shows dates before
+# 1582-10-15 in it.
+function _julian_ymd(d::Dates.Date)
+    c = Dates.value(d) + 1721425 + 32082           # Julian day number + 32082
+    dd = (4c + 3) ÷ 1461
+    e = c - (1461dd) ÷ 4
+    m = (5e + 2) ÷ 153
+    return dd - 4800 + m ÷ 10, m + 3 - 12 * (m ÷ 10), e - (153m + 2) ÷ 5 + 1
+end
+
 function _render_date(toks::Vector{_FmtToken}, x::Float64, date1904::Bool, for_width::Bool;
-                      epoch::Union{Nothing,Dates.Date}=nothing)::String
+                      epoch::Union{Nothing,Dates.Date}=nothing, lo::Bool=false)::String
     x < 0 && epoch === nothing && return "#"^11      # Excel can't show a negative date or time
+    # LibreOffice shows a negative elapsed time (a duration) with its sign in front
+    lo && x < 0 && any(t -> t.kind == :elapsed, toks) && return "-" * _render_date(toks, -x, date1904, for_width; epoch, lo)
     nfrac = min(maximum((parse(Int, t.text) for t in toks if t.kind == :fracsec); init=0), 3)
     per = 10^nfrac
     # The time to the millisecond, then to the digits shown, a half rounding down: the
@@ -643,12 +697,17 @@ function _render_date(toks::Vector{_FmtToken}, x::Float64, date1904::Bool, for_w
     days = floor(Int64, x)
     ms = round(Int64, (x - days) * 86_400_000)
     q, r = divrem(ms, 1000 ÷ per)
-    units = days * 86400 * per + q + (2r > 1000 ÷ per ? 1 : 0)
+    units = if lo     # LibreOffice (F-030): whole seconds truncated; a fraction rounded half up, never carried
+        sec = ms ÷ 1000
+        days * 86400 * per + (nfrac == 0 ? sec : min(q + (2r >= 1000 ÷ per ? 1 : 0), sec * per + per - 1))
+    else
+        days * 86400 * per + q + (2r > 1000 ÷ per ? 1 : 0)
+    end
     totalsec, frac = fldmod(units, per)       # fldmod: dates before an epoch are negative
     days, secofday = fldmod(totalsec, 86400)
     h, rest = divrem(secofday, 3600)
     mi, s = divrem(rest, 60)
-    y, mo, d, wd = _excel_ymd(Int(days), date1904, epoch)
+    y, mo, d, wd = _excel_ymd(Int(days), date1904, epoch; julian = lo)
     ampm = any(t -> t.kind == :ampm, toks)
     io = IOBuffer()
     for t in toks
@@ -662,7 +721,7 @@ function _render_date(toks::Vector{_FmtToken}, x::Float64, date1904::Bool, for_w
             elseif c == 'g'                  # an era name, which has no Gregorian text
                 nothing
             elseif c == 'e'
-                print(io, y)
+                print(io, lo ? lpad(mod(y, 100), 2, '0') : string(y))   # LibreOffice: the era's 2-digit year
             elseif c == 'm'
                 print(io, n == 1 ? string(mo) : n == 2 ? lpad(mo, 2, '0') : n == 3 ? _MONTHS[mo][1:3] :
                           n == 5 ? _MONTHS[mo][1:1] : _MONTHS[mo])
@@ -685,7 +744,7 @@ function _render_date(toks::Vector{_FmtToken}, x::Float64, date1904::Bool, for_w
         elseif k == :ampm
             am = h < 12
             text = length(s_) == 5 ? (am ? s_[1:2] : string(s_[4], s_[5])) : (am ? s_[1:1] : s_[3:3])
-            print(io, text)
+            print(io, lo && length(s_) == 3 ? lowercase(text) : text)   # LibreOffice's A/P is lower case
         elseif k == :lit || k == :digit || k == :point || k == :comma
             print(io, s_)
         elseif k == :pad

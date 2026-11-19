@@ -29,10 +29,20 @@ end
 
 const _XMLDECL = """<?xml version="1.0" encoding="UTF-8"?>\n"""
 
-new_content_xml(xf::ODSFile, version; display::Bool = true) =
-    string(_XMLDECL, "<office:document-content", _NS_DECL, " office:version=\"", version, "\">",
-           "<office:automatic-styles>", typed_styles_xml(xf.styles), "</office:automatic-styles>",
-           _body(xf; display), "</office:document-content>")
+# The font faces ODSFiles declared (phase 4), and the namespace they need.
+function _faces(xf::ODSFile)
+    fx = added_faces_xml(xf.styles)
+    lx = _needs_loext(xf.styles) ? " xmlns:loext=\"$_LOEXT_NS\"" : ""
+    return isempty(fx) ? (lx, "") : (" xmlns:svg=\"$_SVG_NS\"" * lx, "<office:font-face-decls>$fx</office:font-face-decls>")
+end
+
+function new_content_xml(xf::ODSFile, version; display::Bool = true)
+    body = _body(xf; display)            # first: writing may add styles
+    svg, faces = _faces(xf)
+    return string(_XMLDECL, "<office:document-content", _NS_DECL, svg, " office:version=\"", version, "\">",
+                  faces, "<office:automatic-styles>", added_styles_xml(xf.styles), "</office:automatic-styles>",
+                  body, "</office:document-content>")
+end
 
 new_styles_xml(version) =
     string(_XMLDECL, "<office:document-styles", _NS_DECL, " office:version=\"", version, "\">",
@@ -41,10 +51,13 @@ new_styles_xml(version) =
 new_meta_xml(version) =
     string(_XMLDECL, "<office:document-meta", _NS_DECL, " office:version=\"", version, "\">", _meta_body(), "</office:document-meta>")
 
-new_flat_xml(xf::ODSFile, version, mediatype; display::Bool = true) =
-    string(_XMLDECL, "<office:document", _NS_DECL, " office:version=\"", version, "\" office:mimetype=\"", mediatype, "\">",
-           _meta_body(), _STYLES_BODY, "<office:automatic-styles>", typed_styles_xml(xf.styles), "</office:automatic-styles>",
-           _body(xf; display), "</office:document>")
+function new_flat_xml(xf::ODSFile, version, mediatype; display::Bool = true)
+    body = _body(xf; display)
+    svg, faces = _faces(xf)
+    return string(_XMLDECL, "<office:document", _NS_DECL, svg, " office:version=\"", version, "\" office:mimetype=\"", mediatype, "\">",
+                  _meta_body(), faces, _STYLES_BODY, "<office:automatic-styles>", added_styles_xml(xf.styles), "</office:automatic-styles>",
+                  body, "</office:document>")
+end
 
 # :ods, :ots or :fods, for a destination.
 function _output_format(dest, xf::ODSFile)

@@ -41,6 +41,29 @@ end
     @test n == 201
 end
 
+@testset "rendering as LibreOffice does (F-030)" begin
+    # LibreOffice 26.8.3's texts (experiment 012) for the Excel cases and 50 General values.
+    # Day numbers count from the ODF epoch. Left out: booleans (Calc shows a boolean under a
+    # number format as a number; an ODS boolean cell keeps a boolean format, D-024).
+    # Two times half-way between tenths or hundredths of a second, where the engine's
+    # millisecond rounding and LibreOffice's floating-point arithmetic part (the values went
+    # through Basic's `Val`, so the exact doubles LibreOffice used are not known).
+    known = Dict(("ss.0", "46088.58691377315") => "09.4", ("ss.00", "46088.58691140046") => "09.15")
+    n = 0
+    for line in readlines(joinpath(CORE_DATA, "number_formats_libreoffice.tsv"))
+        startswith(line, '#') && continue
+        kind, v, fmt, text = split(line, '\t')
+        kind == "bool" && continue
+        lo = get(known, (fmt, v), chop(text; head=1, tail=1))
+        x = kind == "string" ? String(v) : parse(Float64, v)       # day numbers, as LibreOffice was given them
+        got = SheetCore._display_text(x, fmt; epoch=SheetCore.DEFAULT_NULL_DATE, libreoffice=true)
+        got == lo || @info "differs from LibreOffice" kind v fmt lo got
+        @test got == lo
+        n += 1
+    end
+    @test n == 248
+end
+
 @testset "format codes Excel accepts" begin
     n = 0
     for line in readlines(joinpath(CORE_DATA, "number_format_validity_excel.tsv"))

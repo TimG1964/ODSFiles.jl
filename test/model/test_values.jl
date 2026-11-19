@@ -21,7 +21,7 @@ using ODSFiles: parse_odf_date, parse_odf_duration, duration_value, _is_intlike,
 end
 
 @testset "parse_odf_duration" begin
-    ns(h, m = 0, s = 0) = Int64((h * 3600 + m * 60 + s) * 1_000_000_000)
+    ns(h, m = 0, s = 0) = (Int64(h) * 3600 + m * 60 + s) * 1_000_000_000   # Int64 on 32-bit too
     @test parse_odf_duration("PT13H45M30S") == ns(13, 45, 30)
     @test parse_odf_duration("PT00H00M00S") == 0
     @test parse_odf_duration("PT36H00M00S") == ns(36)
@@ -51,26 +51,26 @@ end
 
 # experiment 007's cases, as LibreOffice re-saved them: label => (value, datatype)
 const LO_VALUES = [
-    "float 7 style=nothing" => (7, :float),
-    "float 7 style=N0" => (7, :float),
+    "float 7 style=nothing" => (Int64(7), :float),
+    "float 7 style=N0" => (Int64(7), :float),
     "float 7 style=N2" => (7.0, :float),              # the format shows decimals (D-016)
-    "float 7.0 style=nothing" => (7, :float),
+    "float 7.0 style=nothing" => (Int64(7), :float),
     "float 7.5 style=N0" => (7.5, :float),
     "float 0.1 style=nothing" => (0.1, :float),
     "float 1e-20 style=nothing" => (1.0e-20, :float),
     "float 1.5E+300 style=nothing" => (1.5e300, :float),
     "float 123456789012345678 style=nothing" => (1.23456789012346e17, :float),   # F-018
-    "float -0 style=nothing" => (0, :float),
+    "float -0 style=nothing" => (Int64(0), :float),
     "float 0.30000000000000004 style=nothing" => (0.3, :float),                  # F-018
     "float 3.141592653589793 style=nothing" => (3.14159265358979, :float),
     "float -2.5 style=N0" => (-2.5, :float),
     "float 1234567.891 style=N2" => (1234567.891, :float),
     "percentage 0.5 P0" => (0.5, :percentage),
     "percentage 0.5 P2" => (0.5, :percentage),
-    "percentage 1 P0" => (1, :percentage),
+    "percentage 1 P0" => (Int64(1), :percentage),
     "percentage 0.125 P0" => (0.125, :percentage),
     "currency GBP 5 C2" => (5.0, :currency),
-    "currency GBP 5 C0" => (5, :currency),
+    "currency GBP 5 C0" => (Int64(5), :currency),
     "currency GBP 5.25 C2" => (5.25, :currency),
     "currency GBP 5.25 C0" => (5.25, :currency),
     "date 2024-03-05 D" => (Date(2024, 3, 5), :date),
@@ -111,9 +111,9 @@ const LO_VALUES = [
     "text entities" => ("<a> & \"q\" é", :string),
     "text with style X" => ("0123", :string),
     "no value-type, p" => ("orphan text", :string),
-    "float, no value attr" => (0, :float),
+    "float, no value attr" => (Int64(0), :float),
     "text CR in p" => ("a\nb", :string),
-    "formula num" => (2, :float),
+    "formula num" => (Int64(2), :float),
     "formula str" => ("abc", :string),
     "formula empty str" => (missing, :empty),                 # F-022: no value type
     "formula bool" => (true, :boolean),

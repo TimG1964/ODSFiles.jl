@@ -46,6 +46,12 @@ lo_profile_url(path) = "file://" * (startswith(path, "/") ? "" : "/") * replace(
     @testset "write" begin
         include("write/test_write.jl")
     end
+    @testset "styles" begin
+        include("styles/test_stylesheet.jl")
+        include("styles/test_formats.jl")
+        include("styles/test_cellformat.jl")
+        include("styles/test_numberformat.jl")
+    end
     @testset "phase 3 (speed)" begin
         include("test_phase3.jl")
     end

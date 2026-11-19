@@ -234,9 +234,9 @@ function write_cell(io::IO, d::Union{Nothing,CellData}, styles::StyleIndex; repe
         return
     end
     print(io, covered ? "<table:covered-table-cell" : "<table:table-cell")
-    if d.style != 0
+    if d.style > 0
         print(io, " table:style-name=\""); _escape_attr(io, style_name(styles, d.style)); print(io, '"')
-    elseif style_default
+    elseif d.style == 0 && style_default         # (-1: a formatted empty cell with no style of its own)
         print(io, " table:style-name=\"Default\"")
     end
     repeat > 1 && print(io, " table:number-columns-repeated=\"", repeat, "\"")
@@ -332,25 +332,153 @@ function write_rows(io::IO, rows, styles::StyleIndex, from::Int; display::Bool =
     return next
 end
 
+#
+# Rows with formats (phase 4): the store's cells, the formatted empty cells, and the row and
+# column attributes
+#
+
+# Writes columns x:y of a row from its stored cells `vals` and formatted empty cells `emps`
+# (disjoint, in column order). Columns with neither are written by `gap(n)`. A cell in the
+# Default style says so where its row (`rowdefault`) or column (`coldefault(a, b)`) has a
+# default style.
+function write_merged_cells(io::IO, styles::StyleIndex, vals::Vector{CellRun}, emps::Vector{CellRun}, x::Int, y::Int,
+                            rowdefault::Bool, coldefault, gap; display::Bool = true)
+    i = 1; j = 1
+    while i <= length(vals) && _lastcol(vals[i]) < x
+        i += 1
+    end
+    while j <= length(emps) && _lastcol(emps[j]) < x
+        j += 1
+    end
+    pos = x
+    while true
+        vi = i <= length(vals) && vals[i].col <= y
+        ej = j <= length(emps) && emps[j].col <= y
+        (vi || ej) || break
+        usev = vi && (!ej || vals[i].col < emps[j].col)
+        run = usev ? vals[i] : emps[j]
+        usev ? (i += 1) : (j += 1)
+        lo = max(Int(run.col), x); hi = min(_lastcol(run), y)
+        lo > pos && gap(lo - pos)
+        write_cell(io, run.data, styles; repeat = hi - lo + 1, style_default = rowdefault || coldefault(lo, hi), display)
+        pos = hi + 1
+    end
+    pos <= y && gap(y - pos + 1)
+    return
+end
+
+_lastcol(runs::Vector{CellRun}) = isempty(runs) ? 0 : _lastcol(runs[end])
+
+# Whether a column in a:b has a default cell style.
+function _any_col_default(cols::Vector{ColFormat}, a::Int, b::Int)
+    i = _fmt_index(cols, a)
+    while i <= length(cols) && _start(cols[i]) <= b
+        cols[i].default >= 0 && return true
+        i += 1
+    end
+    return false
+end
+
+# The attributes of a column or row element for a format run (style, default, visibility).
+function _write_line_attrs(io::IO, r::Union{ColFormat,RowFormat}, styles::StyleIndex)
+    isempty(r.style) || (print(io, " table:style-name=\""); _escape_attr(io, r.style); print(io, '"'))
+    r.visibility == _VISIBLE || (print(io, " table:visibility=\""); _escape_attr(io, r.visibility); print(io, '"'))
+    r.default >= 0 && (print(io, " table:default-cell-style-name=\""); _escape_attr(io, style_name(styles, r.default)); print(io, '"'))
+end
+
+# table:table-column elements for columns a:b, by their formats.
+function write_columns(io::IO, cols::Vector{ColFormat}, styles::StyleIndex, a::Int, b::Int)
+    c = a
+    i = _fmt_index(cols, a)
+    while c <= b
+        r = i <= length(cols) && _start(cols[i]) <= b ? cols[i] : nothing
+        if r === nothing || _start(r) > c                  # columns without a format
+            n = (r === nothing ? b : _start(r) - 1) - c + 1
+            print(io, "<table:table-column")
+            n > 1 && print(io, " table:number-columns-repeated=\"", n, "\"")
+            print(io, "/>")
+            c += n
+            continue
+        end
+        n = min(_stop(r), b) - c + 1
+        print(io, "<table:table-column")
+        _write_line_attrs(io, r, styles)
+        n > 1 && print(io, " table:number-columns-repeated=\"", n, "\"")
+        print(io, "/>")
+        c += n
+        i += 1
+    end
+end
+
+"""
+    write_model_rows(io, store, f::SheetFormats, styles, from) -> Int
+
+Write the rows from row `from` on, with their cells, formatted empty cells and row formats
+(and empty rows between them). Returns the row after the last one written.
+"""
+function write_model_rows(io::IO, s::SheetStore, f::SheetFormats, styles::StyleIndex, from::Int; display::Bool = true)
+    bps = Int[]
+    last = SheetCore.MAX_ROWS
+    _row_bounds!(bps, s.rows, from, last)
+    _row_bounds!(bps, f.cells, from, last)
+    _row_bounds!(bps, f.rows, from, last)
+    isempty(bps) && return from
+    pts = _segment_points(bps, from, maximum(bps) - 1)
+    next = from
+    for k in 1:length(pts)-1
+        a = pts[k]; b = pts[k + 1] - 1
+        vals = _runs_of(s.rows, a)
+        emps = _runs_of(f.cells, a)
+        rf = _fmt_at(f.rows, a)
+        (isempty(vals) && isempty(emps) && (rf === nothing || _isblank(rf))) && continue
+        _write_empty_rows(io, a - next)
+        print(io, "<table:table-row")
+        rf === nothing || _write_line_attrs(io, rf, styles)
+        b > a && print(io, " table:number-rows-repeated=\"", b - a + 1, "\"")
+        print(io, '>')
+        lastc = max(_lastcol(vals), _lastcol(emps), rf === nothing ? 0 : Int(rf.ncells))
+        if lastc == 0
+            print(io, "<table:table-cell/>")
+        else
+            rowdefault = rf !== nothing && rf.default >= 0
+            write_merged_cells(io, styles, vals, emps, 1, lastc, rowdefault, (p, q) -> _any_col_default(f.cols, p, q),
+                               n -> write_cell(io, nothing, styles; repeat = n); display)
+        end
+        print(io, "</table:table-row>")
+        next = b + 1
+    end
+    return next
+end
+
 """
     write_table(io, ws)
 
-A sheet made by ODSFiles, written whole: its columns, its rows from the store, and one
-empty cell for an empty sheet (as LibreOffice writes one, F-015).
+A sheet made by ODSFiles, written whole: its columns, its rows from the store (with their
+formats, if any), and one empty cell for an empty sheet (as LibreOffice writes one, F-015).
 """
 function write_table(io::IO, ws::Worksheet; display::Bool = true)
     s = _cached_store(ws)
+    f = ws.formats
     styles = get_odsfile(ws).styles
     print(io, "<table:table table:name=\""); _escape_attr(io, ws.name); print(io, "\">")
     dim = store_dimension(s)
     ncols = dim === nothing ? 1 : column_number(dim.stop)
-    print(io, "<table:table-column")
-    ncols > 1 && print(io, " table:number-columns-repeated=\"", ncols, "\"")
-    print(io, "/>")
-    if isempty(s.rows)
-        print(io, _EMPTY_ROW)
+    if f === nothing
+        print(io, "<table:table-column")
+        ncols > 1 && print(io, " table:number-columns-repeated=\"", ncols, "\"")
+        print(io, "/>")
+        if isempty(s.rows)
+            print(io, _EMPTY_ROW)
+        else
+            write_rows(io, s.rows, styles, 1; display)
+        end
     else
-        write_rows(io, s.rows, styles, 1; display)
+        for rd in f.cells
+            ncols = max(ncols, _lastcol(rd.runs))
+        end
+        isempty(f.cols) || (ncols = max(ncols, _stop(f.cols[end])))
+        write_columns(io, f.cols, styles, 1, ncols)
+        write_model_rows(io, s, f, styles, 1; display) == 1 && print(io, _EMPTY_ROW)
     end
     print(io, "</table:table>")
 end

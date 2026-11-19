@@ -48,10 +48,12 @@ include("io/sheetindex.jl")
 include("io/prefix.jl")
 include("io/writer.jl")
 
-# the read model (phase 1)
+# the read model (phase 1); full cell styles (phase 4)
+include("styles/cellstyle.jl")
 include("model/styleindex.jl")
 include("model/cells.jl")
 include("model/sheetreader.jl")
+include("styles/formats.jl")
 include("model/workbook.jl")
 include("model/access.jl")
 include("model/rows.jl")
@@ -61,7 +63,13 @@ include("formula/uiformula.jl")
 
 # the write path (phase 2)
 include("write/values.jl")
+include("styles/stylesheet.jl")
+include("styles/sheetformats.jl")
 include("write/edit.jl")
+include("styles/targets.jl")
+include("styles/cellformat.jl")
+include("styles/numberstyle.jl")
+include("styles/format.jl")
 include("write/xmlout.jl")
 include("write/patch.jl")
 include("write/save.jl")
@@ -77,10 +85,15 @@ export
     readdata, getdata, gettable, readtable, readto,
     iserror, geterror,
     setdata!, setFormula,
-    writetable, writetable!, streamods, writerow!, writerows!
+    writetable, writetable!, streamods, writerow!, writerows!,
+    # formats
+    setFont, setBorder, setFill, setAlignment,
+    setFormat, setUniformFormat,
+    setUniformFont, setUniformBorder, setUniformFill, setUniformAlignment, setUniformStyle
 
 @static if VERSION >= v"1.11"
-    eval(Meta.parse("public getcell, getcellrange, getFormula, get_dimension, ODSError, Cell, EmptyCell, DataTable, TableRow, TableRowIterator, SheetRow, StreamWriter, StreamSheet"))
+    eval(Meta.parse("public getcell, getcellrange, getFormula, get_dimension, ODSError, Cell, EmptyCell, DataTable, TableRow, TableRowIterator, SheetRow, StreamWriter, StreamSheet, " *
+                    "getFont, getBorder, getFill, getAlignment, getFormat, getText, getDefaultFont, setOutsideBorder, CellFont, CellFill, CellBorder, CellAlignment, CellFormat"))
 end
 
 end # module

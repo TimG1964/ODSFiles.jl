@@ -69,6 +69,44 @@ function _retag(text::AbstractString, name::AbstractString, value::Union{Nothing
     return String(take!(io))
 end
 
+"""
+    _set_attrs(text, changes; open=false) -> String
+
+`text`, an element's source, with the attributes of its start tag changed: each
+`name => value` of `changes` replaces that attribute's value in place (`value` written as
+is: already escaped), or removes it when `value === nothing`; new attributes go at the end.
+The other attributes keep their original text. With `open=true`, only the start tag is
+returned, as an opening tag.
+"""
+function _set_attrs(text::AbstractString, changes::Vector{Pair{String,Union{Nothing,String}}}; open::Bool = false)
+    isempty(changes) && !open && return String(text)
+    e = _start_tag_end(text)
+    selfclosing = text[prevind(text, e)] == '/'
+    used = falses(length(changes))
+    io = IOBuffer()
+    print(io, '<', _tag_name(text))
+    for (k, v) in _raw_attrs(text)
+        i = findfirst(p -> p.first == k, changes)
+        if i === nothing
+            print(io, ' ', k, '=', v)
+        else
+            used[i] = true
+            nv = changes[i].second
+            nv === nothing || print(io, ' ', k, "=\"", nv, '"')
+        end
+    end
+    for (i, (k, v)) in enumerate(changes)
+        used[i] || v === nothing || print(io, ' ', k, "=\"", v, '"')
+    end
+    if open
+        print(io, '>')
+    else
+        print(io, selfclosing ? "/>" : ">")
+        print(io, SubString(text, nextind(text, e)))
+    end
+    return String(take!(io))
+end
+
 mutable struct _PatchState
     ws::Worksheet
     store::SheetStore
@@ -81,8 +119,10 @@ mutable struct _PatchState
     need_cols::Int                 # columns the edits reach
     rows_started::Bool
     new_rows_written::Bool
-    drows::Vector{Int}             # edited rows, sorted
-    dcols::Dict{Int,Vector{Int}}   # edited columns of each edited row, sorted
+    drows::Vector{Int}             # rows with edited cells, sorted
+    dcols::Dict{Int,Vector{Int}}   # edited columns of each such row, sorted
+    erows::Vector{UnitRange{Int}}  # every edited row (cells, restyled blocks, row formats), sorted, disjoint
+    fmt::Union{Nothing,SheetFormats}   # the sheet's formats, if read
     display::Bool                  # write display text in typed cells (D-029)
 end
 
@@ -94,8 +134,9 @@ function _copy_to!(st::_PatchState, idx::Int)
     return
 end
 
-_col_default(st::_PatchState, col::Int) =
-    any(cr -> cr.default_style >= 0 && cr.col <= col <= cr.col + cr.count - 1, st.store.cols)
+# Whether a column in a:b has a default cell style (in the output).
+_col_default(st::_PatchState, a::Int, b::Int) = st.fmt !== nothing ? _any_col_default(st.fmt.cols, a, b) :
+    any(cr -> cr.default_style >= 0 && cr.col <= b && a <= cr.col + cr.count - 1, st.store.cols)
 
 # Untouched text is not copied element by element: `st.pos` stays behind it, and it is
 # copied in one piece when something must be written after it (`_copy_to!`). Only the
@@ -106,38 +147,68 @@ _col_default(st::_PatchState, col::Int) =
 function _before_rows!(st::_PatchState, at::Function)
     st.rows_started && return
     st.rows_started = true
-    k = st.need_cols - st.ncols
-    if k > 0
+    f = st.fmt
+    need = st.need_cols
+    if f !== nothing && f.cols_touched && !isempty(f.cols)
+        need = max(need, _stop(f.cols[end]))
+    end
+    if need > st.ncols
         _copy_to!(st, at())
-        print(st.out, "<table:table-column")
-        k > 1 && print(st.out, " table:number-columns-repeated=\"", k, "\"")
-        print(st.out, "/>")
-        st.ncols += k
+        f === nothing ? write_columns(st.out, ColFormat[], st.styles, st.ncols + 1, need) :
+                        write_columns(st.out, f.cols, st.styles, st.ncols + 1, need)
+        st.ncols = need
     end
 end
 
-# After the last original row (at src index `at`): the stored rows beyond it (all of them
-# edits).
+# The last row with content in the model (stored cells, formatted cells, row formats).
+function _model_last_row(st::_PatchState)
+    r = isempty(st.store.rows) ? 0 : _lastrow(st.store.rows[end])
+    f = st.fmt
+    if f !== nothing
+        isempty(f.cells) || (r = max(r, _lastrow(f.cells[end])))
+        i = length(f.rows)
+        while i >= 1 && _isblank(f.rows[i])
+            i -= 1
+        end
+        i >= 1 && (r = max(r, _stop(f.rows[i])))
+    end
+    return r
+end
+
+# After the last original row (at src index `at`): the rows of the model beyond it (all of
+# them edits).
 function _write_new_rows!(st::_PatchState, at::Function)
     st.new_rows_written && return
     st.new_rows_written = true
     # once the walk is past the last edit it stops counting rows: then nothing is new
     _past_edits(st) && return
-    i = _first_row_index(st.store, st.nextrow)
-    i > length(st.store.rows) && return
+    _model_last_row(st) >= st.nextrow || return
     _copy_to!(st, at())
-    write_rows(st.out, @view(st.store.rows[i:end]), st.styles, st.nextrow; st.display)
+    if st.fmt === nothing
+        i = _first_row_index(st.store, st.nextrow)
+        write_rows(st.out, @view(st.store.rows[i:end]), st.styles, st.nextrow; st.display)
+    else
+        write_model_rows(st.out, st.store, st.fmt, st.styles, st.nextrow; st.display)
+    end
 end
 
-# The edited rows in a:b.
-function _edited_rows(st::_PatchState, a::Int, b::Int)
-    lo = searchsortedfirst(st.drows, a)
-    hi = searchsortedlast(st.drows, b)
-    return @view st.drows[lo:hi]
+# Whether a row in a:b is edited.
+function _any_edit(st::_PatchState, a::Int, b::Int)
+    v = st.erows
+    lo, hi = 1, length(v)
+    while lo <= hi                               # the first range ending at or after a
+        mid = (lo + hi) >>> 1
+        if last(v[mid]) < a
+            lo = mid + 1
+        else
+            hi = mid - 1
+        end
+    end
+    return lo <= length(v) && first(v[lo]) <= b
 end
 
 # Whether every edit is behind the walk: the rest of the table can be copied as it is.
-_past_edits(st::_PatchState) = st.rows_started && (isempty(st.drows) || st.nextrow > st.drows[end])
+_past_edits(st::_PatchState) = st.rows_started && (isempty(st.erows) || st.nextrow > last(st.erows[end]))
 
 function _walk!(st::_PatchState, node::XML.LazyNode, level::Symbol)
     c = XML.Cursor(node)
@@ -158,6 +229,18 @@ function _walk!(st::_PatchState, node::XML.LazyNode, level::Symbol)
         end
         start() = first(XML.sourcespan(XML.LazyNode(ch)))
         if t == "table:table-column"
+            if st.fmt !== nothing && st.fmt.cols_touched
+                ln = XML.LazyNode(ch)
+                sp = XML.sourcespan(ln)
+                text = SubString(st.src, first(sp), last(sp))
+                n = clamp(repeat, 1, max(1, SheetCore.MAX_COLS - st.ncols))
+                new = _patched_columns(st, text, _line_attrs(ch, st.styles, "table:number-columns-repeated"), st.ncols + 1, st.ncols + n)
+                if new != text
+                    _copy_to!(st, first(sp))
+                    print(st.out, new)
+                    st.pos = nextind(st.src, last(sp))
+                end
+            end
             st.ncols += repeat
         elseif t in _COL_CONTAINERS
             _walk!(st, XML.LazyNode(ch), :cols)
@@ -165,13 +248,14 @@ function _walk!(st::_PatchState, node::XML.LazyNode, level::Symbol)
             level === :table && _before_rows!(st, start)
             r0 = st.nextrow
             cnt = max(1, min(repeat, SheetCore.MAX_ROWS - r0 + 1))
-            if isempty(_edited_rows(st, r0, r0 + cnt - 1))
+            if !_any_edit(st, r0, r0 + cnt - 1)
                 st.nextrow = r0 + cnt                   # untouched: left in the gap
             else
                 ln = XML.LazyNode(ch)
                 sp = XML.sourcespan(ln)
                 _copy_to!(st, first(sp))
-                _patch_row!(st, ln, SubString(st.src, first(sp), last(sp)), cnt)
+                _patch_row!(st, ln, SubString(st.src, first(sp), last(sp)), cnt,
+                            st.fmt === nothing ? nothing : _line_attrs(ch, st.styles, "table:number-rows-repeated"))
                 st.pos = nextind(st.src, last(sp))
             end
         elseif t in _ROW_CONTAINERS
@@ -191,51 +275,183 @@ function _walk!(st::_PatchState, node::XML.LazyNode, level::Symbol)
     return
 end
 
-# A row element covering rows nextrow…nextrow+cnt-1, some of them edited, at `st.pos`.
-function _patch_row!(st::_PatchState, ln::XML.LazyNode, text::SubString{String}, cnt::Int)
-    r0 = st.nextrow
-    st.nextrow = r0 + cnt
-    edited = _edited_rows(st, r0, r0 + cnt - 1)
-    cur = r0
-    for r in edited
-        r > cur && print(st.out, _retag(text, "table:number-rows-repeated", r - cur))
-        _write_edited_row!(st, ln, text, r)
-        cur = r + 1
+const _AttrChanges = Vector{Pair{String,Union{Nothing,String}}}
+
+# The attribute changes that turn a column or row element with attributes `orig` (repeat,
+# style, default, visibility; `_line_attrs`) into one with the format `r`.
+function _line_changes(orig, r::Union{ColFormat,RowFormat}, styles::StyleIndex)
+    ch = _AttrChanges()
+    _, style, default, vis = orig
+    r.style == style || push!(ch, "table:style-name" => (isempty(r.style) ? nothing : _escape_attr(r.style)))
+    r.default == default ||
+        push!(ch, "table:default-cell-style-name" => (r.default < 0 ? nothing : _escape_attr(style_name(styles, r.default))))
+    r.visibility == vis || push!(ch, "table:visibility" => (r.visibility == _VISIBLE ? nothing : _escape_attr(r.visibility)))
+    return ch
+end
+
+# A table:table-column element covering columns a:b, as the columns' formats now say.
+function _patched_columns(st::_PatchState, text::AbstractString, orig, a::Int, b::Int)
+    cols = st.fmt.cols
+    i = _fmt_index(cols, a)
+    if i <= length(cols) && _start(cols[i]) <= a && _stop(cols[i]) >= b
+        return _set_attrs(text, _line_changes(orig, cols[i], st.styles))     # one format: the element stays whole
     end
-    last_row = r0 + cnt - 1
-    cur <= last_row && print(st.out, _retag(text, "table:number-rows-repeated", last_row - cur + 1))
+    io = IOBuffer()
+    c = a
+    while c <= b
+        r = i <= length(cols) && _start(cols[i]) <= c ? cols[i] : _blank(ColFormat, c, b - c + 1)
+        n = min(_stop(r), b) - c + 1
+        print(io, _set_attrs(_retag(text, "table:number-columns-repeated", n), _line_changes(orig, r, st.styles)))
+        c += n
+        i += 1
+    end
+    return String(take!(io))
+end
+
+# The edited columns of row r, as sorted disjoint ranges: its edited cells and the restyled
+# blocks it is in.
+function _edited_cols(st::_PatchState, r::Int)
+    cols = UnitRange{Int}[]
+    dc = get(st.dcols, r, nothing)
+    dc === nothing || foreach(c -> push!(cols, c:c), dc)
+    if st.fmt !== nothing
+        for (rr, cc) in st.fmt.rects
+            r in rr && push!(cols, cc)
+        end
+    end
+    return _merge_ranges(cols)
+end
+
+# Ranges as sorted, disjoint ones (overlapping or adjacent ranges joined).
+function _merge_ranges(v::Vector{UnitRange{Int}})
+    merged = UnitRange{Int}[]
+    for c in sort(v; by = first)
+        if !isempty(merged) && first(c) <= last(merged[end]) + 1
+            merged[end] = first(merged[end]):max(last(merged[end]), last(c))
+        else
+            push!(merged, c)
+        end
+    end
+    return merged
+end
+
+_attrs_touched(st::_PatchState, r::Int) = st.fmt !== nothing && any(tr -> r in tr, st.fmt.rows_touched)
+
+# The columns the cells of a row element cover.
+function _row_extent(ln::XML.LazyNode)
+    c = XML.Cursor(ln)
+    XML.next!(c)
+    n = 0
+    XML.for_each_child!(c) do ch
+        if XML.nodetype(ch) === XML.Element && XML.tag(ch) in ("table:table-cell", "table:covered-table-cell")
+            k = 1
+            for (key, v) in XML.eachattribute!(ch)
+                key == "table:number-columns-repeated" && (k = max(1, something(tryparse(Int, v), 1)))
+            end
+            n += k
+        end
+        XML.skip_element!(ch)
+    end
+    return n
+end
+
+# A row element covering rows nextrow…nextrow+cnt-1, some of them edited, at `st.pos`. It is
+# cut into segments within which the edits and the model are the same for every row;
+# segments without edits keep the original element (with their repeat count).
+function _patch_row!(st::_PatchState, ln::XML.LazyNode, text::SubString{String}, cnt::Int, orig)
+    r0 = st.nextrow
+    r1 = r0 + cnt - 1
+    st.nextrow = r1 + 1
+    bps = Int[]
+    lo = searchsortedfirst(st.drows, r0)
+    hi = searchsortedlast(st.drows, r1)
+    for k in lo:hi
+        push!(bps, st.drows[k], st.drows[k] + 1)
+    end
+    f = st.fmt
+    if f !== nothing
+        for (rr, _) in f.rects
+            push!(bps, first(rr), last(rr) + 1)
+        end
+        for tr in f.rows_touched
+            push!(bps, first(tr), last(tr) + 1)
+        end
+        _row_bounds!(bps, st.store.rows, r0, r1)
+        _row_bounds!(bps, f.cells, r0, r1)
+        _row_bounds!(bps, f.rows, r0, r1)
+    end
+    pts = _segment_points(bps, r0, r1)
+    plain = 0                                    # untouched rows waiting to be written
+    extent = -1                                  # the columns the original row's cells cover
+    for k in 1:length(pts)-1
+        a = pts[k]; n = pts[k + 1] - a
+        cols = _edited_cols(st, a)
+        attrs = _attrs_touched(st, a)
+        if attrs                                 # cells to add, for the row to cover more columns
+            rf = _fmt_at(f.rows, a)
+            extent < 0 && (extent = _row_extent(ln))
+            if rf !== nothing && rf.ncells > extent
+                cols = _merge_ranges(push!(cols, extent+1:Int(rf.ncells)))
+            end
+        end
+        changes = attrs ? _line_changes(orig, something(_fmt_at(f.rows, a), _blank(RowFormat, a, n)), st.styles) : _AttrChanges()
+        if isempty(cols) && isempty(changes)     # untouched, or touched but as it was
+            plain += n
+            continue
+        end
+        plain > 0 && print(st.out, _retag(text, "table:number-rows-repeated", plain))
+        plain = 0
+        if isempty(cols)
+            print(st.out, _set_attrs(_retag(text, "table:number-rows-repeated", n), changes))
+        else
+            _write_edited_row!(st, ln, text, a, n, cols, changes)
+        end
+    end
+    if plain == cnt
+        print(st.out, text)                      # nothing changed after all: as it was
+    elseif plain > 0
+        print(st.out, _retag(text, "table:number-rows-repeated", plain))
+    end
     return
 end
 
-# An edited cell that is now empty keeps the original cell's style.
+# An edited cell that is now empty keeps the original cell's style, and whether it is
+# covered or spans a merge (when the sheet's formats were not read: else they say).
 function _empty_cell_like(io::IO, celltext::AbstractString, repeat::Int)
     covered = startswith(celltext, "<table:covered-table-cell")
     print(io, covered ? "<table:covered-table-cell" : "<table:table-cell")
     for (k, v) in _raw_attrs(celltext)
-        k == "table:style-name" && print(io, ' ', k, '=', v)
+        k in ("table:style-name", "table:number-columns-spanned", "table:number-rows-spanned") && print(io, ' ', k, '=', v)
     end
     repeat > 1 && print(io, " table:number-columns-repeated=\"", repeat, '"')
     print(io, "/>")
 end
 
-function _write_edited_cell!(st::_PatchState, r::Int, col::Int, celltext::AbstractString, rowdefault::Bool)
-    d = cell_data(st.store, r, col)
-    if d === nothing
-        _empty_cell_like(st.out, celltext, 1)
+# Columns x:y of row r from the model; `celltext` is the original cell they replace
+# (`nothing` past the row's cells).
+function _write_model_cols!(st::_PatchState, r::Int, x::Int, y::Int, celltext, rowdefault::Bool)
+    emps = st.fmt === nothing ? _NO_RUNS : _runs_of(st.fmt.cells, r)
+    gap = if st.fmt === nothing && celltext !== nothing
+        n -> _empty_cell_like(st.out, celltext, n)
     else
-        write_cell(st.out, d, st.styles; style_default = rowdefault || _col_default(st, col), st.display)
+        n -> write_cell(st.out, nothing, st.styles; repeat = n)
     end
+    write_merged_cells(st.out, st.styles, _runs_of(st.store.rows, r), emps, x, y, rowdefault,
+                       (a, b) -> _col_default(st, a, b), gap; st.display)
 end
 
-function _write_edited_row!(st::_PatchState, ln::XML.LazyNode, text::SubString{String}, r::Int)
+# Rows a … a+n-1 (alike), with the edited columns `cols` written from the model and the rest
+# copied from the original row; `changes` to the row's attributes.
+function _write_edited_row!(st::_PatchState, ln::XML.LazyNode, text::SubString{String}, a::Int, n::Int,
+                            cols::Vector{UnitRange{Int}}, changes::_AttrChanges)
     src = st.src
     out = st.out
     e = _start_tag_end(text)
     selfclosing = text[prevind(text, e)] == '/'
-    rowdefault = any(((k, _),) -> k == "table:default-cell-style-name", _raw_attrs(text))
-    print(out, _retag(text, "table:number-rows-repeated", nothing; open = true))
-    cols = st.dcols[r]
-    ci = 1                                      # the next edited column to write
+    rf = st.fmt === nothing ? nothing : _fmt_at(st.fmt.rows, a)
+    rowdefault = rf !== nothing ? rf.default >= 0 : any(((k, _),) -> k == "table:default-cell-style-name", _raw_attrs(text))
+    print(out, _set_attrs(_retag(text, "table:number-rows-repeated", n; open = true), changes; open = true))
+    ci = 1                                      # the next edited range to write
     col = 1
     off = first(XML.sourcespan(ln)) - 1          # src index = off + index in text
     lpos = off + nextind(text, e)                # src index after the start tag
@@ -249,15 +465,15 @@ function _write_edited_row!(st::_PatchState, ln::XML.LazyNode, text::SubString{S
             celltext = SubString(src, first(csp), last(csp))
             t = XML.tag(ch)
             if t == "table:table-cell" || t == "table:covered-table-cell"
-                n = max(1, _attr_int(celltext, "table:number-columns-repeated", 1))
-                lastc = col + n - 1
+                k = max(1, _attr_int(celltext, "table:number-columns-repeated", 1))
+                lastc = col + k - 1
                 cur = col
-                while ci <= length(cols) && cols[ci] <= lastc
-                    ec = cols[ci]
-                    ec > cur && print(out, _retag(celltext, "table:number-columns-repeated", ec - cur))
-                    _write_edited_cell!(st, r, ec, celltext, rowdefault)
-                    cur = ec + 1
-                    ci += 1
+                while ci <= length(cols) && first(cols[ci]) <= lastc
+                    x = max(first(cols[ci]), cur); y = min(last(cols[ci]), lastc)
+                    x > cur && print(out, _retag(celltext, "table:number-columns-repeated", x - cur))
+                    _write_model_cols!(st, a, x, y, celltext, rowdefault)
+                    cur = y + 1
+                    last(cols[ci]) <= lastc ? (ci += 1) : break
                 end
                 if cur == col
                     print(out, celltext)
@@ -272,14 +488,16 @@ function _write_edited_row!(st::_PatchState, ln::XML.LazyNode, text::SubString{S
             XML.skip_element!(ch)
         end
     end
-    # edited columns beyond the row's cells
+    # edited columns beyond the row's cells, as far as the model has cells
+    lastm = max(_lastcol(_runs_of(st.store.rows, a)), st.fmt === nothing ? 0 : _lastcol(_runs_of(st.fmt.cells, a)),
+                rf === nothing ? 0 : Int(rf.ncells))
     while ci <= length(cols)
-        ec = cols[ci]
-        ec > col && write_cell(out, nothing, st.styles; repeat = ec - col)
-        d = cell_data(st.store, r, ec)
-        d === nothing ? write_cell(out, nothing, st.styles) :
-            write_cell(out, d, st.styles; style_default = rowdefault || _col_default(st, ec), st.display)
-        col = ec + 1
+        x = max(first(cols[ci]), col); y = min(last(cols[ci]), lastm)
+        if y >= x
+            x > col && write_cell(out, nothing, st.styles; repeat = x - col)
+            _write_model_cols!(st, a, x, y, nothing, rowdefault)
+            col = y + 1
+        end
         ci += 1
     end
     if selfclosing
@@ -302,9 +520,20 @@ function patched_table(ws::Worksheet; display::Bool = true)
     store = _cached_store(ws)
     dcols = Dict{Int,Vector{Int}}(r => sort!(unique(cs)) for (r, cs) in ws.dirty)
     need = maximum((maximum(v) for v in values(dcols)); init = 0)
+    drows = sort!(collect(keys(dcols)))
+    f = ws.formats
+    ranges = UnitRange{Int}[r:r for r in drows]
+    if f !== nothing
+        for (rr, cc) in f.rects
+            push!(ranges, rr)
+            need = max(need, last(cc))
+        end
+        append!(ranges, f.rows_touched)
+    end
+    erows = _merge_ranges(ranges)
     sp = XML.sourcespan(node)
     st = _PatchState(ws, store, get_odsfile(ws).styles, src, IOBuffer(sizehint = ncodeunits(src) ÷ 4 + 1024),
-                     first(sp), 1, 0, need, false, false, sort!(collect(keys(dcols))), dcols, display)
+                     first(sp), 1, 0, need, false, false, drows, dcols, erows, f, display)
     _walk!(st, node, :table)
     _copy_to!(st, nextind(src, last(sp)))      # the rest of the table, verbatim
     return String(take!(st.out))
@@ -334,10 +563,11 @@ function patched_content(xf::ODSFile; display::Bool = true)
     root = XML.LazyNode(c)
     src = parent(XML.sourcetext(root))
     rootspan = XML.sourcespan(root)
-    autostyles = nothing; body = nothing
+    autostyles = nothing; body = nothing; facedecls = nothing
     XML.for_each_child!(c) do ch
         XML.nodetype(ch) === XML.Element || return
         t = XML.tag(ch)
+        t == "office:font-face-decls" && (facedecls = XML.LazyNode(ch))
         t == "office:automatic-styles" && (autostyles = XML.LazyNode(ch))
         t == "office:body" && (body = XML.LazyNode(ch))
         XML.skip_element!(ch)
@@ -349,14 +579,35 @@ function patched_content(xf::ODSFile; display::Bool = true)
     tagend_at = src[prevind(src, tagend)] == '/' ? prevind(src, tagend) : tagend
     starttag = SubString(src, first(rootspan), tagend)
     ns = join(" xmlns:$p=\"$u\"" for (p, u) in _NAMESPACES if !occursin("xmlns:$p=", starttag))
+    fx = added_faces_xml(xf.styles)
+    !isempty(fx) && !occursin("xmlns:svg=", starttag) && (ns *= " xmlns:svg=\"$_SVG_NS\"")
+    _needs_loext(xf.styles) && !occursin("xmlns:loext=", starttag) && (ns *= " xmlns:loext=\"$_LOEXT_NS\"")
     isempty(ns) || push!(splices, (tagend_at, tagend_at - 1, ns))
+    # font faces (phase 4): in office:font-face-decls, which comes before the automatic styles
+    if !isempty(fx)
+        if facedecls === nothing
+            anchor = something(autostyles, body, Some(nothing))
+            anchor === nothing && throw(ODSError("The document has no office:body."))
+            at = first(XML.sourcespan(anchor))
+            push!(splices, (at, at - 1, "<office:font-face-decls>$fx</office:font-face-decls>"))
+        else
+            fsp = XML.sourcespan(facedecls)
+            ftext = SubString(src, first(fsp), last(fsp))
+            if endswith(ftext, "/>")
+                push!(splices, (first(fsp), last(fsp), _retag(ftext, "", nothing; open = true) * fx * "</office:font-face-decls>"))
+            else
+                at = first(fsp) - 1 + findlast("</", ftext)[1]
+                push!(splices, (at, at - 1, fx))
+            end
+        end
+    end
     # edited sheets
     last_table_end = 0
     for ws in _sheets(xf)
         ws.entry === nothing && continue
         sp = XML.sourcespan(ws.entry.node)
         last_table_end = max(last_table_end, last(sp))
-        isempty(ws.dirty) || push!(splices, (first(sp), last(sp), patched_table(ws; display)))
+        _has_edits(ws) && push!(splices, (first(sp), last(sp), patched_table(ws; display)))
     end
     # new sheets, after the last one
     newsheets = [ws for ws in _sheets(xf) if ws.entry === nothing]
@@ -367,7 +618,7 @@ function patched_content(xf::ODSFile; display::Bool = true)
         push!(splices, (at, at - 1, String(take!(io))))
     end
     # typed styles
-    sx = typed_styles_xml(xf.styles)
+    sx = added_styles_xml(xf.styles)
     if !isempty(sx)
         if autostyles === nothing
             body === nothing && throw(ODSError("The document has no office:body."))

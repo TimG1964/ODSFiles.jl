@@ -439,8 +439,8 @@ function read_store(node::XML.LazyNode{String}, styles::StyleIndex;
 end
 
 # The row holding row number `row`, or `nothing`.
-function _row_at(s::SheetStore, row::Integer)
-    rows = s.rows
+_row_at(s::SheetStore, row::Integer) = _row_at(s.rows, row)
+function _row_at(rows::Vector{RowData}, row::Integer)
     lo, hi = 1, length(rows)
     while lo <= hi
         mid = (lo + hi) >>> 1
@@ -465,11 +465,12 @@ function cell_data(s::SheetStore, row::Integer, col::Integer)
 end
 
 # The index of the first stored row that ends at or after `row` (length + 1 if none).
-function _first_row_index(s::SheetStore, row::Integer)
-    lo, hi = 1, length(s.rows)
+_first_row_index(s::SheetStore, row::Integer) = _first_row_index(s.rows, row)
+function _first_row_index(rows::Vector{RowData}, row::Integer)
+    lo, hi = 1, length(rows)
     while lo <= hi
         mid = (lo + hi) >>> 1
-        if _lastrow(@inbounds s.rows[mid]) < row
+        if _lastrow(@inbounds rows[mid]) < row
             lo = mid + 1
         else
             hi = mid - 1

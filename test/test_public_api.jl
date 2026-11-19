@@ -10,6 +10,9 @@ const DOCUMENTED_NOT_MARKED = (
     # Tables.jl does not use `public`; these are its documented interface:
     :istable, :rows, :columns, :getcolumn, :columnnames, :schema, :Schema, :rowaccess,
     :columnaccess, :columntable, :Columns, :CopiedColumns, :AbstractColumns,
+    # Parsers.jl 2 (allowed by compat; CI has a job for it) documents `Parsers.tryparse` in
+    # its README but marks nothing `public`; Parsers.jl 3 marks it public:
+    (pkgversion(ODSFiles.Parsers) < v"3" ? (:tryparse,) : ())...,
 )
 # Imported only to be re-exported (declared `public` in ODSFiles on Julia 1.11+; on 1.10
 # nothing marks them as used):

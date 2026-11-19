@@ -37,10 +37,11 @@ mutable struct Worksheet
     localnames::Union{Nothing,Vector{DefinedName}}
     lock::ReentrantLock
     dirty::Dict{Int,Vector{Int}}      # edited cells of a sheet read from a file: row → columns
+    formats::Union{Nothing,SheetFormats}   # read on first use by formatting (phase 4)
 end
 
 Worksheet(xf, name, index, entry, visible, store, localnames, lock) =
-    Worksheet(xf, name, index, entry, visible, store, localnames, lock, Dict{Int,Vector{Int}}())
+    Worksheet(xf, name, index, entry, visible, store, localnames, lock, Dict{Int,Vector{Int}}(), nothing)
 
 # Whether the sheet was made by ODSFiles (so it is written whole), not read from the file.
 isnewsheet(ws::Worksheet) = ws.entry === nothing

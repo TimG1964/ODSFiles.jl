@@ -14,15 +14,18 @@ const _TYPED_STYLE_INFO = Dict(
 
 # the XML of each typed style: (data style, cell style), given their names
 function _typed_style_xml(kind::Symbol, cellname::AbstractString)
-    dname = "$(cellname)-N"
-    ymd = """<number:year number:style="long"/><number:text>-</number:text><number:month number:style="long"/><number:text>-</number:text><number:day number:style="long"/>"""
+    cell = """<style:style style:name="$cellname" style:family="table-cell" style:parent-style-name="Default" style:data-style-name="$(cellname)-N"/>"""
+    return _typed_data_xml(kind, "$(cellname)-N") * cell
+end
+
+function _typed_data_xml(kind::Symbol, dname::AbstractString)
+    ymd ="""<number:year number:style="long"/><number:text>-</number:text><number:month number:style="long"/><number:text>-</number:text><number:day number:style="long"/>"""
     hms = """<number:hours number:style="long"/><number:text>:</number:text><number:minutes number:style="long"/><number:text>:</number:text><number:seconds number:style="long"/>"""
     data = kind === :date ? """<number:date-style style:name="$dname">$ymd</number:date-style>""" :
            kind === :datetime ? """<number:date-style style:name="$dname">$ymd<number:text> </number:text>$hms</number:date-style>""" :
            kind === :time ? """<number:time-style style:name="$dname" number:truncate-on-overflow="false">$hms</number:time-style>""" :
            """<number:boolean-style style:name="$dname"><number:boolean/></number:boolean-style>"""
-    cell = """<style:style style:name="$cellname" style:family="table-cell" style:parent-style-name="Default" style:data-style-name="$dname"/>"""
-    return data * cell
+    return data
 end
 
 """
@@ -42,10 +45,12 @@ function typed_style_id(styles::StyleIndex, kind::Symbol)
         k += 1
         name = "$base-$k"
     end
-    push!(styles.names, name)
-    push!(styles.info, _TYPED_STYLE_INFO[kind])
-    id = Int32(length(styles.names) - 1)
-    styles.ids[name] = id
+    sh = styles.sheet[1]
+    if sh !== nothing
+        sh.datainfo["$name-N"] = _TYPED_STYLE_INFO[kind]
+        sh.datastyles["$name-N"] = _typed_data_xml(kind, "$name-N")    # for getFormat and getText (not written again)
+    end
+    id = _register_style!(styles, name, _TYPED_STYLE_INFO[kind], CellStyle("Default", "$name-N"))
     styles.added[kind] = id
     return id
 end
@@ -90,13 +95,15 @@ end
     choose_style(styles, old_style, value) -> Int32
 
 The style a cell written with `value` gets (D-027): its current style if that style's data
-format fits the value, otherwise ODSFiles's typed style for dates, times and booleans, or
-`Default` for numbers and text.
+format fits the value. Otherwise a style that is only a number format gives way to
+ODSFiles's typed style for dates, times and booleans, or `Default` for numbers and text; any
+other style is kept with only its number format replaced (D-037, `retyped_style`).
 """
 function choose_style(styles::StyleIndex, old::Integer, value)
     kind = _needed_kind(value)
     _style_fits(style_info(styles, old), kind) && return Int32(old)
-    return kind === nothing ? Int32(0) : typed_style_id(styles, kind)
+    old == 0 && return kind === nothing ? Int32(0) : typed_style_id(styles, kind)
+    return retyped_style(styles, Int32(old), kind)
 end
 
 _duration_ns(t::Dates.Time) = Dates.value(t)
@@ -193,8 +200,22 @@ Set (or with `nothing`, remove) one cell of the store, splitting the repeated ro
 cells around it. The bounds are kept up to date.
 """
 function store_set!(s::SheetStore, row::Int, col::Int, d::Union{Nothing,CellData})
-    rows = s.rows
-    i = _first_row_index(s, row)
+    _rows_set!(s.rows, row, col, d) || return s
+    if d === nothing
+        s.stale = true
+    elseif !s.stale
+        dim = s.dimension
+        s.dimension = dim === nothing ? CellRange(CellRef(row, col), CellRef(row, col)) :
+            CellRange(CellRef(min(row, row_number(dim.start)), min(col, column_number(dim.start))),
+                      CellRef(max(row, row_number(dim.stop)), max(col, column_number(dim.stop))))
+    end
+    return s
+end
+
+# Sets (or with `nothing`, removes) cell (row, col) of a run-length row list, splitting the
+# repeated rows and cells around it. False if there was nothing to remove.
+function _rows_set!(rows::Vector{RowData}, row::Int, col::Int, d::Union{Nothing,CellData})
+    i = _first_row_index(rows, row)
     if i <= length(rows) && rows[i].row <= row
         rd = rows[i]
         if rd.count > 1
@@ -210,15 +231,7 @@ function store_set!(s::SheetStore, row::Int, col::Int, d::Union{Nothing,CellData
     elseif d !== nothing
         insert!(rows, i, RowData(row, 1, [CellRun(col, 1, d)]))
     else
-        return s
+        return false
     end
-    if d === nothing
-        s.stale = true
-    elseif !s.stale
-        dim = s.dimension
-        s.dimension = dim === nothing ? CellRange(CellRef(row, col), CellRef(row, col)) :
-            CellRange(CellRef(min(row, row_number(dim.start)), min(col, column_number(dim.start))),
-                      CellRef(max(row, row_number(dim.stop)), max(col, column_number(dim.stop))))
-    end
-    return s
+    return true
 end
