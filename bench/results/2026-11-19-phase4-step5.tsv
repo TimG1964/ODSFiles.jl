@@ -24,3 +24,4 @@ large	readtable	2491.31	2334.33	0.937	820.9	1693.9
 large	readfile	271.99	290.00	1.066	308.1	530.0
 large	eachrow	387.92	57.63	0.149	210.8	0.0
 large	single_cell	306.42	0.01	0.000	205.5	0.0
+large	writetable	6397.00	5467.95	0.855	3654.2	4896.3
