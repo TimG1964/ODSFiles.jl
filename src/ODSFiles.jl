@@ -13,7 +13,7 @@ import Tables
 import Unicode
 import XML
 import ZipArchives
-using Printf: @printf
+using Printf: @printf, @sprintf
 
 # The format-independent core, shared in future with XLSX.jl (D-001). ODSFiles uses it by
 # qualified name (`SheetCore.CellRef`), or through the names imported below.
@@ -70,6 +70,8 @@ include("styles/targets.jl")
 include("styles/cellformat.jl")
 include("styles/numberstyle.jl")
 include("styles/format.jl")
+include("styles/merge.jl")
+include("styles/layout.jl")
 include("write/xmlout.jl")
 include("write/patch.jl")
 include("write/save.jl")
@@ -89,11 +91,13 @@ export
     # formats
     setFont, setBorder, setFill, setAlignment,
     setFormat, setUniformFormat,
-    setUniformFont, setUniformBorder, setUniformFill, setUniformAlignment, setUniformStyle
+    setUniformFont, setUniformBorder, setUniformFill, setUniformAlignment, setUniformStyle,
+    getMergedCells, isMergedCell, getMergedBaseCell, mergeCells, removeMergedCells,
+    setColumnWidth, setRowHeight, autofitColumns
 
 @static if VERSION >= v"1.11"
     eval(Meta.parse("public getcell, getcellrange, getFormula, get_dimension, ODSError, Cell, EmptyCell, DataTable, TableRow, TableRowIterator, SheetRow, StreamWriter, StreamSheet, " *
-                    "getFont, getBorder, getFill, getAlignment, getFormat, getText, getDefaultFont, setOutsideBorder, CellFont, CellFill, CellBorder, CellAlignment, CellFormat"))
+                    "getFont, getBorder, getFill, getAlignment, getFormat, getText, getDefaultFont, setOutsideBorder, CellFont, CellFill, CellBorder, CellAlignment, CellFormat, getColumnWidth, getRowHeight"))
 end
 
 end # module

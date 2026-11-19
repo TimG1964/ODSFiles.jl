@@ -15,6 +15,7 @@ makedocs(
             "Cell values and types" => "guide/values.md",
             "References and names" => "guide/references.md",
             "Formulas" => "guide/formulas.md",
+            "Formatting" => "guide/formatting.md",
             "Saving and writing" => "guide/saving.md",
         ],
         "Coming from XLSX.jl" => "xlsx.md",

@@ -44,9 +44,12 @@ function new_content_xml(xf::ODSFile, version; display::Bool = true)
                   body, "</office:document-content>")
 end
 
-new_styles_xml(version) =
-    string(_XMLDECL, "<office:document-styles", _NS_DECL, " office:version=\"", version, "\">",
-           _STYLES_BODY, "<office:automatic-styles/><office:master-styles/></office:document-styles>")
+# (`named`: more named styles for office:styles, as a streamed file's column widths and
+# formats, D-042; `ns`: namespace declarations they need)
+new_styles_xml(version, named::AbstractString = "", ns::AbstractString = "") =
+    string(_XMLDECL, "<office:document-styles", _NS_DECL, ns, " office:version=\"", version, "\">",
+           replace(_STYLES_BODY, "</office:styles>" => named * "</office:styles>"),
+           "<office:automatic-styles/><office:master-styles/></office:document-styles>")
 
 new_meta_xml(version) =
     string(_XMLDECL, "<office:document-meta", _NS_DECL, " office:version=\"", version, "\">", _meta_body(), "</office:document-meta>")

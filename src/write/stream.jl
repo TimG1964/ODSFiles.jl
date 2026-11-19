@@ -35,6 +35,7 @@ mutable struct StreamSheet
     row::Int               # the last row written
     isopen::Bool
     display::Bool          # display text in typed cells (D-029)
+    colstyles::Dict{Int,Int32}   # the style of each formatted column's cells (`column_formats`)
 end
 
 """
@@ -48,6 +49,36 @@ mutable struct StreamWriter
     names::Vector{String}
     current::Union{Nothing,StreamSheet}
     display::Bool
+    named::IOBuffer                  # named cell styles for styles.xml, written last (column formats; D-042)
+    widths::Dict{String,String}      # column-width text → its automatic column style
+    formats::Dict{String,Int32}      # format code → its named cell style
+    version::String
+    started::Bool                    # content.xml's styles and the body's start are written
+end
+
+# A column style for a width (in characters), declared in content.xml's automatic styles:
+# only before the first sheet starts them (LibreOffice takes column widths from automatic
+# styles only, D-042).
+function _declare_width!(s::StreamWriter, width::Real)
+    w = _length_text(_width_cm(width, :chars))
+    haskey(s.widths, w) && return s.widths[w]
+    s.started && throw(ODSError("A streamed file declares its column widths before its first sheet, and the width $width is new " *
+        "after it. Give every sheet's widths to `writetable(…; streaming=true)`, or to `streamods(…; declare_widths=[…])`."))
+    s.widths[w] = "odsf-co$(length(s.widths) + 1)"
+end
+
+# The start of content.xml: the automatic styles (typed styles, column widths), then the body.
+function _start_content!(s::StreamWriter)
+    s.started && return
+    w = s.buf.zip
+    print(w, _XMLDECL, "<office:document-content", _NS_DECL, " office:version=\"", s.version, "\">",
+          "<office:automatic-styles>", typed_styles_xml(s.styles))
+    for (wtext, name) in sort!(collect(s.widths); by = last)
+        print(w, "<style:style style:name=\"", name, "\" style:family=\"table-column\"><style:table-column-properties style:column-width=\"",
+              wtext, "\"/></style:style>")
+    end
+    print(w, "</office:automatic-styles><office:body><office:spreadsheet>")
+    s.started = true
 end
 
 Base.show(io::IO, s::StreamWriter) = print(io, "StreamWriter(", length(s.names), " sheets)")
@@ -62,7 +93,7 @@ function _stream_styles()
 end
 
 """
-    streamods(f, dest; overwrite=false, version="1.4")
+    streamods(f, dest; overwrite=false, version="1.4", display_text=true, declare_widths=[])
 
 Write a new file to `dest` (a path or an `IO`) row by row, in bounded memory. `f` gets a
 [`StreamWriter`](@ref): add sheets with `addsheet!(s, name; columns)` (a header row) or
@@ -70,6 +101,10 @@ Write a new file to `dest` (a path or an `IO`) row by row, in bounded memory. `f
 [`writerow!`](@ref) and [`writerows!`](@ref). The format follows the extension (`.ods`,
 `.ots`; flat `.fods` is not streamed). `display_text=false` leaves out the display text of
 number, date, time and boolean cells, as in [`writeods`](@ref).
+
+Column widths (`addsheet!(…; column_widths)`) are declared at the start of the file, before
+its first sheet: a width a later sheet uses must be the first sheet's too, or be listed in
+`declare_widths` (in characters). `writetable(…; streaming=true)` declares them all.
 
 ```julia
 streamods("big.ods") do s
@@ -81,28 +116,32 @@ end
 ```
 """
 function streamods(f::Function, dest::Union{AbstractString,IO}; overwrite::Bool = false,
-                   version::AbstractString = DEFAULT_ODF_VERSION, display_text::Bool = true)
+                   version::AbstractString = DEFAULT_ODF_VERSION, display_text::Bool = true,
+                   declare_widths::AbstractVector{<:Real} = Float64[])
     _check_overwrite(dest, overwrite)
     _check_version(version)
     fmt = dest isa AbstractString ? lowercase(splitext(dest)[2]) : ".ods"
     fmt == ".fods" && throw(ODSError("Flat XML (.fods) files can't be streamed; write them with `writeods`."))
     mt = fmt == ".ots" ? MEDIATYPE_OTS : MEDIATYPE_ODS
     styles = _stream_styles()
-    others = [PackagePart("styles.xml", new_styles_xml(version)), PackagePart("meta.xml", new_meta_xml(version))]
-    manifest = manifest_xml(vcat([PackagePart("content.xml", "")], others), mt, version)
     produce(w) = begin
         ZipArchives.zip_newfile(w, "content.xml"; compress = true)
-        print(w, _XMLDECL, "<office:document-content", _NS_DECL, " office:version=\"", version, "\">",
-              "<office:automatic-styles>", typed_styles_xml(styles), "</office:automatic-styles>",
-              "<office:body><office:spreadsheet>")
-        sw = StreamWriter(_StreamBuffer(IOBuffer(), w), styles, String[], nothing, display_text)
+        sw = StreamWriter(_StreamBuffer(IOBuffer(), w), styles, String[], nothing, display_text, IOBuffer(),
+                          Dict{String,String}(), Dict{String,Int32}(), version, false)
+        foreach(x -> _declare_width!(sw, x), declare_widths)
         f(sw)
         isempty(sw.names) && addsheet!(sw, "Sheet1")
         _close_sheet!(sw)
         _flush!(sw.buf)
         print(w, "</office:spreadsheet></office:body></office:document-content>")
         ZipArchives.zip_commitfile(w)
-        _append_parts!(w, others, manifest)
+        # styles.xml last: it holds the named cell styles of the sheets' column formats
+        named = String(take!(sw.named))
+        sh = styles.sheet[1]
+        sh === nothing || (named = join(sh.datastyles[n] for n in sh.added_data) * named)
+        ns = _needs_loext(styles) ? " xmlns:loext=\"$_LOEXT_NS\"" : ""
+        others = [PackagePart("styles.xml", new_styles_xml(version, named, ns)), PackagePart("meta.xml", new_meta_xml(version))]
+        _append_parts!(w, others, manifest_xml(vcat([PackagePart("content.xml", "")], others), mt, version))
     end
     if dest isa AbstractString
         open(io -> _write_mimetype_zip(io, mt), dest, "w")
@@ -127,13 +166,17 @@ function _close_sheet!(s::StreamWriter)
 end
 
 """
-    addsheet!(s::StreamWriter, name=""; columns=nothing) -> StreamSheet
-    addsheet!(s::StreamWriter, name, table) -> StreamSheet
+    addsheet!(s::StreamWriter, name=""; columns=nothing, column_widths=nothing, column_formats=nothing) -> StreamSheet
+    addsheet!(s::StreamWriter, name, table; column_widths, column_formats) -> StreamSheet
 
 Start the next sheet of a streamed file, finishing the one before. `columns` writes a header
-row; a Tables.jl `table` writes its header and all its rows.
+row; a Tables.jl `table` writes its header and all its rows. `column_widths` and
+`column_formats` set the columns' widths and the number formats of the rows written after
+the header, as in [`writetable!`](@ref).
 """
-function addsheet!(s::StreamWriter, name::AbstractString = ""; columns = nothing)
+function addsheet!(s::StreamWriter, name::AbstractString = ""; columns = nothing, column_widths = nothing,
+                   column_formats = nothing)
+    widths, formats = _column_settings(columns === nothing ? nothing : [string(c) for c in columns], column_widths, column_formats)
     _close_sheet!(s)
     if isempty(name)
         n = length(s.names) + 1
@@ -145,18 +188,48 @@ function addsheet!(s::StreamWriter, name::AbstractString = ""; columns = nothing
     end
     any(x -> _same_sheetname(x, name), s.names) && throw(ODSError("There is already a sheet named `$name`."))
     push!(s.names, String(name))
+    foreach(p -> _declare_width!(s, p.second), widths)       # the first sheet's can still be declared
+    _start_content!(s)
     io = s.buf.io
     print(io, "<table:table table:name=\""); _escape_attr(io, name); print(io, "\">")
     # the width is not known in advance; a wide column definition costs nothing (F-028)
-    print(io, "<table:table-column table:number-columns-repeated=\"", SheetCore.MAX_COLS, "\"/>")
-    sh = StreamSheet(String(name), s.buf, s.styles, 0, true, s.display)
+    _stream_columns!(io, s, widths)
+    sh = StreamSheet(String(name), s.buf, s.styles, 0, true, s.display, Dict{Int,Int32}())
     s.current = sh
     columns === nothing || writerow!(sh, [string(c) for c in columns])
+    for (c, fmt) in formats                     # the header keeps no format: set after it
+        sh.colstyles[c] = _stream_format_style!(s, fmt)
+    end
     return sh
 end
 
-function addsheet!(s::StreamWriter, name::AbstractString, table)
-    sh = addsheet!(s, name; columns = collect(String, string.(Tables.columnnames(Tables.columns(table)))))
+# The sheet's columns: a named column style for each width, then the rest of the sheet.
+function _stream_columns!(io::IOBuffer, s::StreamWriter, widths::Vector{Pair{Int,Float64}})
+    bycol = Dict(widths)
+    c = 1
+    for k in sort!(collect(keys(bycol)))
+        k > c && print(io, "<table:table-column", k - c > 1 ? " table:number-columns-repeated=\"$(k - c)\"" : "", "/>")
+        name = _declare_width!(s, bycol[k])
+        print(io, "<table:table-column table:style-name=\"", name, "\"/>")
+        c = k + 1
+    end
+    c <= SheetCore.MAX_COLS && print(io, "<table:table-column table:number-columns-repeated=\"", SheetCore.MAX_COLS - c + 1, "\"/>")
+end
+
+# A named cell style with the number format `fmt` (its data style, too, goes to styles.xml).
+function _stream_format_style!(s::StreamWriter, fmt::AbstractString)
+    code = _format_code(fmt)
+    get!(s.formats, code) do
+        ds = add_number_format!(s.styles, code)
+        isempty(ds) && return Int32(0)
+        name = "odsf-fmt$(length(s.formats) + 1)"
+        print(s.named, "<style:style style:name=\"", name, "\" style:family=\"table-cell\" style:parent-style-name=\"Default\" style:data-style-name=\"", _xattr(ds), "\"/>")
+        _register_style!(s.styles, name, stylesheet(s.styles).datainfo[ds], CellStyle("Default", ds))
+    end
+end
+
+function addsheet!(s::StreamWriter, name::AbstractString, table; kw...)
+    sh = addsheet!(s, name; columns = collect(String, string.(Tables.columnnames(Tables.columns(table)))), kw...)
     writerows!(sh, table)
     return sh
 end
@@ -175,14 +248,14 @@ function writerow!(sh::StreamSheet, row::Union{Tuple,NamedTuple,AbstractVector})
     print(io, "<table:table-row>")
     gap = 0
     any = false
-    for v in values(row)
+    for (j, v) in enumerate(values(row))
         if v === missing || v === nothing
             gap += 1
             continue
         end
         gap > 0 && write_cell(io, nothing, sh.styles; repeat = gap)
         gap = 0
-        _stream_cell!(io, sh, v)
+        _stream_cell!(io, sh, v, isempty(sh.colstyles) ? Int32(0) : get(sh.colstyles, j, Int32(0)))
         any = true
     end
     any || print(io, "<table:table-cell/>")
@@ -194,8 +267,11 @@ end
 
 # A function barrier: specialised on the value's type, the cell is encoded and written
 # without boxing its stored form (phase 3).
-function _stream_cell!(io::IOBuffer, sh::StreamSheet, v)
-    d = encode_value(v, choose_style(sh.styles, 0, v))
+function _stream_cell!(io::IOBuffer, sh::StreamSheet, v, colstyle::Int32 = Int32(0))
+    # a column's format, when it fits the value; else as without one (no derived styles can be
+    # added once the sheet has begun)
+    style = colstyle != 0 && _style_fits(style_info(sh.styles, colstyle), _needed_kind(v)) ? colstyle : choose_style(sh.styles, 0, v)
+    d = encode_value(v, style)
     d === nothing || write_cell(io, d, sh.styles; display = sh.display)
     return nothing
 end
