@@ -659,6 +659,12 @@ set (phase 5).
 """
 function _write_sheet(out::_ChunkedIO, ws::Worksheet, rw::Union{Nothing,RefRewriter}; display::Bool = true)
     ws.entry === nothing && return write_table(out, ws; display)
+    # groups changed (phase 5 step 7): the table is written, then its group containers rebuilt
+    _groups_touched(ws) && return _with_groups(io -> _write_chunked(o -> _write_sheet_now(o, ws, rw; display), io), out, ws.formats)
+    return _write_sheet_now(out, ws, rw; display)
+end
+
+function _write_sheet_now(out::_ChunkedIO, ws::Worksheet, rw::Union{Nothing,RefRewriter}; display::Bool = true)
     srw = _sheet_rewriter(ws, ws.copied ? nothing : rw)
     _has_edits(ws) && return write_patched_table(out, ws; display, rw = srw)
     node = ws.entry.node

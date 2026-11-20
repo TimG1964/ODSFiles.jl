@@ -522,6 +522,7 @@ function shift_lines!(ws::Worksheet, axis::Int, at::Int, n::Int)
         s.cols = [ColRun(c.col, c.count, c.default, c.visibility == _VISIBLE) for c in f.cols]
     end
     n > 0 && _format_new_lines!(s, f, axis, at, n)
+    _shift_sheet_groups!(f, axis, at, n, maxl)        # groups (phase 5 step 7, F-052)
     merged = _shift_merges!(s, f, axis, at, n)
     s.stale = true
     # what the patched save needs

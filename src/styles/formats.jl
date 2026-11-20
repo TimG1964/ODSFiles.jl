@@ -56,6 +56,20 @@ _isblank(r::ColFormat) = isempty(r.style) && r.default < 0 && r.visibility == _V
 _isblank(r::RowFormat) = isempty(r.style) && r.default < 0 && r.visibility == _VISIBLE && r.ncells == 0
 
 """
+    LineGroup(first, last, depth, display)
+
+A group of rows or columns: the lines `first:last`, its nesting depth (1 for a group no other
+holds; LibreOffice allows 7), and whether it is expanded (`table:display`, false when collapsed).
+Groups of a sheet nest: two either don't meet, or one holds the other (F-052).
+"""
+struct LineGroup
+    first::Int
+    last::Int
+    depth::Int
+    display::Bool
+end
+
+"""
     SheetFormats
 
 The formats of a sheet that the value store leaves out:
@@ -74,12 +88,17 @@ mutable struct SheetFormats
     cols_touched::Bool
     rows_touched::Vector{UnitRange{Int}}
     rects::Vector{Tuple{UnitRange{Int},UnitRange{Int}}}
+    # phase 5 step 7: the row and column groups (`table:table-row-group`, `-column-group`), and
+    # whether they changed (then a save writes the sheet's containers again, D-060)
+    rowgroups::Vector{LineGroup}
+    colgroups::Vector{LineGroup}
+    groups_touched::Bool
 end
 SheetFormats() = SheetFormats(RowData[], ColFormat[], RowFormat[], false, UnitRange{Int}[],
-                              Tuple{UnitRange{Int},UnitRange{Int}}[])
+                              Tuple{UnitRange{Int},UnitRange{Int}}[], LineGroup[], LineGroup[], false)
 
 # Whether formats changed since the sheet was read.
-_formats_touched(f::SheetFormats) = f.cols_touched || !isempty(f.rows_touched) || !isempty(f.rects)
+_formats_touched(f::SheetFormats) = f.cols_touched || !isempty(f.rows_touched) || !isempty(f.rects) || f.groups_touched
 
 #
 # Run lists
@@ -188,9 +207,26 @@ function read_formats(node::XML.LazyNode{String}, styles::StyleIndex, store::She
     XML.next!(c)                 # on table:table (depth 1)
     nextrow = 1
     runs = CellRun[]
+    open = Tuple{Int,Int,Bool,Bool}[]     # groups being read: (depth in the XML, first line, rows?, display)
+    endgroups!(d) = while !isempty(open) && open[end][1] >= d
+        xd, a, isrow, disp = pop!(open)
+        last = isrow ? nextrow - 1 : (isempty(f.cols) ? 0 : _stop(f.cols[end]))
+        depth = count(g -> g[3] == isrow, open) + 1
+        last >= a && push!(isrow ? f.rowgroups : f.colgroups, LineGroup(a, last, depth, disp))
+    end
     while XML.next!(c) !== nothing && XML.depth(c) > 1
         XML.nodetype(c) === XML.Element || continue
+        endgroups!(XML.depth(c))
         t = XML.tag(c)
+        if t == "table:table-row-group" || t == "table:table-column-group"
+            isrow = t == "table:table-row-group"
+            disp = true
+            for (k, v) in XML.eachattribute!(c)
+                k == "table:display" && (disp = v != "false")
+            end
+            push!(open, (XML.depth(c), isrow ? nextrow : (isempty(f.cols) ? 1 : _stop(f.cols[end]) + 1), isrow, disp))
+            continue
+        end
         if t == "table:table-row"
             nextrow = _read_row_formats!(f, c, styles, store, nextrow, runs)
         elseif t == "table:table-column"
@@ -201,6 +237,8 @@ function read_formats(node::XML.LazyNode{String}, styles::StyleIndex, store::She
             XML.skip_element!(c)
         end
     end
+    endgroups!(0)
+    sort!(f.rowgroups; by = g -> (g.first, g.depth)); sort!(f.colgroups; by = g -> (g.first, g.depth))
     return f
 end
 

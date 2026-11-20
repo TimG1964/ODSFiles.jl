@@ -127,6 +127,17 @@ getTabColor
 removeTabColor
 ```
 
+Groups of rows and columns, as LibreOffice nests them:
+
+```@docs
+groupRows
+groupColumns
+ungroupRows
+ungroupColumns
+getRowOutlineLevel
+getColumnOutlineLevel
+```
+
 ## Formatting
 
 Fonts, fills, borders and alignment:

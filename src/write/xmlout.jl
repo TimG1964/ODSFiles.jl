@@ -467,6 +467,11 @@ A sheet made by ODSFiles, written whole: its columns, its rows from the store (w
 formats, if any), and one empty cell for an empty sheet (as LibreOffice writes one, F-015).
 """
 function write_table(io::IO, ws::Worksheet; display::Bool = true)
+    _has_groups(ws.formats) && return _with_groups(o -> _write_table_flat(o, ws; display), io, ws.formats)   # phase 5 step 7
+    return _write_table_flat(io, ws; display)
+end
+
+function _write_table_flat(io::IO, ws::Worksheet; display::Bool = true)
     s = _cached_store(ws)
     f = ws.formats
     styles = get_odsfile(ws).styles

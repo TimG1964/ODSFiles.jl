@@ -1,0 +1,113 @@
+rows 3:5	ok
+rows 4:4 inside	ok
+rows 10:12	ok
+rows 10:12 hidden (hideDetail)	done
+rows 15:16	ok
+rows 17:18 adjacent	ok
+rows 20:22	ok
+rows 21:24 overlapping	ok
+rows 30:40 level 1	ok
+rows 30:39 level 2	ok
+rows 30:38 level 3	ok
+rows 30:37 level 4	ok
+rows 30:36 level 5	ok
+rows 30:35 level 6	ok
+rows 30:34 level 7	ok
+rows 30:33 level 8	ok
+rows 30:32 level 9	ok
+rows 45:52	ok
+rows 48:49 ungrouped	ok
+rows 55:56	ok
+rows 55:56 hidden, then 55:57 grouped	ok
+cols C:D	ok
+cols D inside	ok
+cols F:G	ok
+cols F:G hidden	done
+H a: 3:5 twice	ok	ok
+H b: 13:15, 14, ungroup 13	ok	ok	ok
+H c: 23:25, 24, ungroup 24:25	ok	ok	ok
+H d: 33:34, 35:36, ungroup 34:35	ok	ok	ok
+H e: 43:45, 44, then 42:46	ok	ok	ok
+H f: 53:55, 54, then 54:55	ok	ok	ok
+H g: 63:65, 64:65, then 63:64	ok	ok	ok
+H h: 73:74 hidden, ungroup	ok
+H h: ungroup	ok
+H i: 83:85, 84	ok	ok
+H i: 84 hidden, 83:85 hidden then shown	done
+H j: 93:95, then 94:97	ok	ok
+H k: 103:105, then 101:103	ok	ok
+H row 73	hidden
+H row 74	hidden
+I: inserts and deletes	done
+row 1	IsVisible=True
+row 2	IsVisible=True
+row 3	IsVisible=True
+row 4	IsVisible=True
+row 5	IsVisible=True
+row 6	IsVisible=True
+row 7	IsVisible=True
+row 8	IsVisible=True
+row 9	IsVisible=True
+row 10	IsVisible=False
+row 11	IsVisible=False
+row 12	IsVisible=False
+row 13	IsVisible=True
+row 14	IsVisible=True
+row 15	IsVisible=True
+row 16	IsVisible=True
+row 17	IsVisible=True
+row 18	IsVisible=True
+row 19	IsVisible=True
+row 20	IsVisible=True
+row 21	IsVisible=True
+row 22	IsVisible=True
+row 23	IsVisible=True
+row 24	IsVisible=True
+row 25	IsVisible=True
+row 26	IsVisible=True
+row 27	IsVisible=True
+row 28	IsVisible=True
+row 29	IsVisible=True
+row 30	IsVisible=True
+row 31	IsVisible=True
+row 32	IsVisible=True
+row 33	IsVisible=True
+row 34	IsVisible=True
+row 35	IsVisible=True
+row 36	IsVisible=True
+row 37	IsVisible=True
+row 38	IsVisible=True
+row 39	IsVisible=True
+row 40	IsVisible=True
+row 41	IsVisible=True
+row 42	IsVisible=True
+row 43	IsVisible=True
+row 44	IsVisible=True
+row 45	IsVisible=True
+row 46	IsVisible=True
+row 47	IsVisible=True
+row 48	IsVisible=True
+row 49	IsVisible=True
+row 50	IsVisible=True
+row 51	IsVisible=True
+row 52	IsVisible=True
+row 53	IsVisible=True
+row 54	IsVisible=True
+row 55	IsVisible=False
+row 56	IsVisible=False
+row 57	IsVisible=True
+row 58	IsVisible=True
+row 59	IsVisible=True
+row 60	IsVisible=True
+col 1	IsVisible=True
+col 2	IsVisible=True
+col 3	IsVisible=True
+col 4	IsVisible=True
+col 5	IsVisible=True
+col 6	IsVisible=False
+col 7	IsVisible=False
+col 8	IsVisible=True
+col 9	IsVisible=True
+col 10	IsVisible=True
+col 11	IsVisible=True
+col 12	IsVisible=True

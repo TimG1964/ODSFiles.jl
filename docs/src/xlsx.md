@@ -64,6 +64,11 @@ The formatting functions work as in XLSX.jl too, with the differences listed in
   **tab colours** ([`setTabColor`](@ref)) take XLSX.jl's arguments. ODF has no very hidden sheets:
   `:veryHidden` hides a sheet as `:hidden` does, as LibreOffice imports Excel's. Theme colours are
   not accepted, as elsewhere in ODSFiles.
+- **Grouping** ([`groupRows`](@ref), [`groupColumns`](@ref), [`ungroupRows`](@ref),
+  [`ungroupColumns`](@ref)) takes XLSX.jl's arguments, but follows LibreOffice, whose groups are
+  nested containers rather than Excel's levels per line: groups next to each other stay separate,
+  ungrouping removes a whole group (and lifts the groups inside it), and a range that crosses a
+  group, or an eighth level, is an error.
 - **Not yet available:**
   Excel-style tables, conditional formats, comments, images and charts, and `writetable`'s
   `as_table` and `freeze_header`.

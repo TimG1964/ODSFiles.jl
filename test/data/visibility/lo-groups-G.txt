@@ -1,0 +1,20 @@
+rows 3:5 depth 1 
+rows 4:4 depth 2 
+rows 10:12 depth 1 table:display="false"
+rows 15:16 depth 1 
+rows 17:18 depth 1 
+rows 20:22 depth 1 
+rows 30:34 depth 7 
+rows 30:35 depth 6 
+rows 30:36 depth 5 
+rows 30:37 depth 4 
+rows 30:38 depth 3 
+rows 30:39 depth 2 
+rows 30:40 depth 1 
+rows 55:56 depth 2 table:display="false"
+rows 55:57 depth 1 
+rows hidden: 10:10 11:11 12:12 55:55 56:56
+cols 3:4 depth 1 
+cols 4:4 depth 2 
+cols 6:7 depth 1 table:display="false"
+cols hidden: 6:7
