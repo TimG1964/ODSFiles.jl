@@ -45,6 +45,7 @@ lo_profile_url(path) = "file://" * (startswith(path, "/") ? "" : "/") * replace(
     end
     @testset "formulas" begin
         include("formula/test_openformula.jl")
+        include("formula/test_refs.jl")
     end
     @testset "write" begin
         include("write/test_write.jl")

@@ -1,0 +1,34 @@
+rename_data	ok	New Name,Other,My Sheet,Z
+rename_other	ok	Data,Oth.er,My Sheet,Z
+rename_z	ok	Data,Other,My Sheet,Zed
+rename_case	ok	DATA,Other,My Sheet,Z
+delete_data	ok	Other,My Sheet,Z
+delete_other	ok	Data,My Sheet,Z
+delete_mysheet	ok	Data,Other,Z
+delete_z	ok	Data,Other,My Sheet
+copy_data_end	ok	Data,Other,My Sheet,Z,Data_2
+copy_data_first	ok	Data_2,Data,Other,My Sheet,Z
+copy_other_end	ok	Data,Other,My Sheet,Z,Other_2
+copy_data_mid	ok	Data,Other,Data_2,My Sheet,Z
+move_data_end	ok	Other,My Sheet,Z,Data
+move_z_first	ok	Z,Data,Other,My Sheet
+move_mysheet_end	ok	Data,Other,Z,My Sheet
+move_other_first	ok	Other,Data,My Sheet,Z
+insert_first	ok	New,Data,Other,My Sheet,Z
+insert_mid	ok	Data,Other,New,My Sheet,Z
+insert_end	ok	Data,Other,My Sheet,Z,New
+delete_only_sheet	error 1: An exception occurred 
+Type: com.sun.star.uno.RuntimeException
+Message: .	Sheet1
+rename_bad_colon	ok	Sheet1
+rename_bad_quote	ok	Sheet1
+rename_inner_quote	ok	a'b
+rename_empty	ok	a'b
+rename_duplicate	ok	a'b,Two
+rename_duplicate_case	ok	a'b,Two
+q_delete_other	ok	Data,My Sheet,Z
+q_delete_mysheet	ok	Data,Other,Z
+q_delete_z	ok	Data,Other,My Sheet
+q_delete_data	ok	Other,My Sheet,Z
+q_rename_z	ok	Data,Other,My Sheet,Zed
+q_move_z_first	ok	Z,Data,Other,My Sheet

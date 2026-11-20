@@ -62,6 +62,7 @@ include("model/rows.jl")
 include("model/tables.jl")
 include("formula/openformula.jl")
 include("formula/uiformula.jl")
+include("formula/refs.jl")
 
 # the write path (phase 2)
 include("write/values.jl")
