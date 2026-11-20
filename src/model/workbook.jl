@@ -52,6 +52,21 @@ mutable struct TableStyleEdits
 end
 TableStyleEdits() = TableStyleEdits(Pair{String,String}[], false)
 
+# A sheet's protection, as its text has it (read on first use) or as set since.
+mutable struct SheetProtection
+    attrs::Dict{String,String}        # the start tag's protection attributes
+    options::Union{Nothing,Dict{String,String}}   # loext:table-protection's attributes, nothing if none
+    child::UnitRange{Int}             # the span of the text's loext:table-protection (empty if none)
+    changed::Bool
+end
+
+
+mutable struct WorkbookProtection
+    attrs::Dict{String,String}
+    changed::Bool
+end
+
+
 # The view settings set since the file was read (phase 5 step 8): per sheet (by the sheet, so that
 # they follow renames) and for the whole view; each item's (config:type, value), or `nothing` to remove it.
 const ViewItems = Dict{String,Union{Nothing,Tuple{String,String}}}
@@ -84,11 +99,12 @@ mutable struct Worksheet
     copied::Bool                      # a copy made by `copysheet!`: its text is its own, not the file's
     nameedits::NameEdits              # its local names deleted, and where they are (phase 5)
     props::Union{Nothing,SheetProps}  # visibility and tab colour, once read (phase 5)
+    protection::Union{Nothing,SheetProtection}   # its protection, once read (phase 5 step 9)
 end
 
 Worksheet(xf, name, index, entry, visible, store, localnames, lock) =
     Worksheet(xf, name, index, entry, visible, store, localnames, lock, Dict{Int,Vector{Int}}(), nothing, nothing, nothing, 0, false,
-              NameEdits(), nothing)
+              NameEdits(), nothing, nothing)
 
 # Whether the sheet was made by ODSFiles (so it is written whole), not read from the file.
 isnewsheet(ws::Worksheet) = ws.entry === nothing
@@ -121,14 +137,15 @@ mutable struct ODSFile
     nameedits::NameEdits              # workbook names deleted, and where they are (phase 5)
     tstyles::TableStyleEdits          # table styles ODSFiles derived (phase 5)
     views::ViewEdits                  # view settings set (phase 5)
+    wbprotection::Union{Nothing,WorkbookProtection}   # the structure's protection, once read (phase 5 step 9)
 end
 
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, false, nothing,
-            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits())
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits(), nothing)
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io,
-            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits())
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits(), nothing)
 
 #
 # The sheet index is built as far as it is needed: `xf["Sheet1"]` or `xf[1]` finds the first

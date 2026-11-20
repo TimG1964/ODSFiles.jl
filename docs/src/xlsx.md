@@ -75,6 +75,12 @@ The formatting functions work as in XLSX.jl too, with the differences listed in
   is kept as its cursor only; zoom runs from 20 to 600; LibreOffice has no page layout view and no
   "frozen split" (`splitFreeze` freezes). A split's position is in screen pixels, so it falls at the
   edge of the rows and columns given on a 96-dpi screen at 100% zoom.
+- **Protection** ([`protectSheet`](@ref), [`protectWorkbook`](@ref), [`setCellProtection`](@ref)
+  and their getters) takes XLSX.jl's arguments, stored as LibreOffice stores it. Passwords are
+  hashed as LibreOffice hashes them (SHA-1 of the UTF-16 text), so any text works, not only 15
+  ASCII characters. LibreOffice has no permission to format, sort, insert hyperlinks or edit
+  objects and scenarios on a protected sheet, and no window protection: asking for them is an
+  error.
 - **Not yet available:**
   Excel-style tables, conditional formats, comments, images and charts, and `writetable`'s
   `as_table` and `freeze_header`.

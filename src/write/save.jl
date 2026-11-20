@@ -20,7 +20,7 @@ function _meta_body()
 end
 
 function _write_body(io::IO, xf::ODSFile; display::Bool = true)
-    print(io, "<office:body><office:spreadsheet>")
+    print(io, "<office:body><office:spreadsheet", _wb_protection_attrs_xml(xf), ">")   # structure protection (phase 5 step 9)
     foreach(ws -> write_table(io, ws; display), xf.sheets)
     isempty(xf.names) || print(io, "<table:named-expressions>", _names_xml(xf.names), "</table:named-expressions>")
     print(io, "</office:spreadsheet></office:body>")
@@ -32,7 +32,7 @@ const _XMLDECL = """<?xml version="1.0" encoding="UTF-8"?>\n"""
 # The font faces ODSFiles declared (phase 4), and the namespace they need.
 function _faces(xf::ODSFile)
     fx = added_faces_xml(xf.styles)
-    lx = _needs_loext(xf.styles) ? " xmlns:loext=\"$_LOEXT_NS\"" : ""
+    lx = _needs_loext(xf.styles) || _needs_protection_loext(xf) ? " xmlns:loext=\"$_LOEXT_NS\"" : ""
     return isempty(fx) ? (lx, "") : (" xmlns:svg=\"$_SVG_NS\"" * lx, "<office:font-face-decls>$fx</office:font-face-decls>")
 end
 

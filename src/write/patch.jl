@@ -586,7 +586,7 @@ function write_patched_table(out::_ChunkedIO, ws::Worksheet; display::Bool = tru
     sp = XML.sourcespan(node)
     st = _PatchState(ws, store, get_odsfile(ws).styles, src, out,
                      first(sp), 1, 0, need, false, false, drows, dcols, erows, f, display, rw, ws.entry.name, 0, 0, -1)
-    (ws.name != ws.entry.name || _props_changed(ws)) && _renamed_start_tag!(st, ws)
+    _start_tag_changed(ws) && _renamed_start_tag!(st, ws)
     if ws.rowmap !== nothing || ws.colmap !== nothing
         st.posrow = 0
         _walk_mapped!(st, node, :table)        # rows or columns inserted or deleted (phase 5)
@@ -613,11 +613,24 @@ function _table_start_tag(ws::Worksheet, rw::Union{Nothing,RefRewriter}, src::St
         tag = String(take!(io))
     end
     changed = _props_changed(ws)                   # its table style (phase 5 step 6)
-    ws.name == ws.entry.name && !changed && return tag
+    prot = _prot_changed(ws)                       # its protection (phase 5 step 9)
+    ws.name == ws.entry.name && !changed && !prot && return tag
     ch = Pair{String,Union{Nothing,String}}[]
     ws.name == ws.entry.name || push!(ch, "table:name" => _escape_attr(ws.name))
     changed && push!(ch, "table:style-name" => (ws.props.style === nothing ? nothing : _escape_attr(ws.props.style)))
+    prot && append!(ch, _protection_changes(ws.protection))
     return _set_attrs(tag, ch; open = true)
+end
+
+# Whether a sheet's start tag changes (phase 5).
+_start_tag_changed(ws::Worksheet) = ws.name != ws.entry.name || _props_changed(ws) || _prot_changed(ws)
+
+# A sheet's protection options, when its protection changed: (the span of the text's element, or an
+# empty range where it goes, after the start tag ending at `e`; its new XML).
+function _protection_splice(ws::Worksheet, e::Int)
+    _prot_changed(ws) || return nothing
+    p = ws.protection
+    return (isempty(p.child) ? (e + 1:e) : p.child, _protection_xml(p))
 end
 
 function _renamed_start_tag!(st::_PatchState, ws::Worksheet)
@@ -625,6 +638,13 @@ function _renamed_start_tag!(st::_PatchState, ws::Worksheet)
     e = a - 1 + _start_tag_end(SubString(st.src, a))
     print(st.out, _table_start_tag(ws, st.rw, st.src, a, e))
     st.pos = e + 1
+    ps = _protection_splice(ws, e)
+    if ps !== nothing
+        sp, x = ps
+        _copy_to!(st, first(sp))
+        print(st.out, x)
+        isempty(sp) || (st.pos = last(sp) + 1)
+    end
     return
 end
 
@@ -676,7 +696,10 @@ function _write_sheet_now(out::_ChunkedIO, ws::Worksheet, rw::Union{Nothing,RefR
     put(x, y) = x > y ? nothing : srw === nothing ? print(out, SubString(src, x, y)) :
                                    rewrite_xml(out, srw, src, x, y; sheet = ws.entry.name)
     pos = e + 1
-    for (x, y, rep) in _name_splices(ws.localnames, ws.nameedits, src)    # its names' edits (phase 5)
+    splices = _name_splices(ws.localnames, ws.nameedits, src)            # its names' edits (phase 5)
+    ps = _protection_splice(ws, e)                                       # its protection options (step 9)
+    ps === nothing || pushfirst!(splices, (first(ps[1]), last(ps[1]), ps[2]))
+    for (x, y, rep) in splices
         put(pos, prevind(src, x))
         print(out, rep)
         pos = y >= x ? nextind(src, y) : max(pos, x)
@@ -796,7 +819,7 @@ function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = tru
     facedecls = get(kids, "office:font-face-decls", nothing)
     splices = _Splice[]
     fx = added_faces_xml(xf.styles)
-    _ns_splice!(splices, src, rootspan, !isempty(fx), _needs_loext(xf.styles))
+    _ns_splice!(splices, src, rootspan, !isempty(fx), _needs_loext(xf.styles) || _needs_protection_loext(xf))
     # font faces (phase 4): in office:font-face-decls, which comes before the styles
     stylesnode = get(kids, "office:styles", nothing)
     isempty(fx) || _append_splice!(splices, src, facedecls, "office:font-face-decls", fx,
@@ -821,7 +844,7 @@ function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = tru
         # edited sheets (and, after structural edits, every other sheet: its references are rewritten)
         for ws in orig
             sp = spans[ws]
-            (_has_edits(ws) || rw !== nothing || ws.name != ws.entry.name || _names_edited(ws) || _props_changed(ws)) &&
+            (_has_edits(ws) || rw !== nothing || _start_tag_changed(ws) || _names_edited(ws)) &&
                 push!(splices, (first(sp), last(sp), io -> _write_sheet(io, ws, rw; display)))
         end
         # new sheets (and copies), after the last one
@@ -875,6 +898,14 @@ function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = tru
         isempty(ns) || push!(splices, (e, e - 1, ns))
     end
     # typed and formatting styles (before the sheets are written, which add none)
+    # the file's structure protection (phase 5 step 9): office:spreadsheet's start tag
+    if _wbprot_changed(xf)
+        r = _spreadsheet_tag_span(xf)
+        tag = SubString(src, first(r), last(r))
+        ch = Pair{String,Union{Nothing,String}}[k => (haskey(xf.wbprotection.attrs, k) ? _escape_attr(xf.wbprotection.attrs[k]) : nothing)
+                                                for k in _WB_PROT_ATTRS]
+        push!(splices, (first(r), last(r), _set_attrs(tag, ch; open = !endswith(tag, "/>"))))
+    end
     sx = added_styles_xml(xf.styles, used_styles(xf)) * _table_styles_xml(xf)     # table styles: phase 5 step 6
     if !isempty(sx)
         _append_splice!(splices, src, autostyles, "office:automatic-styles", sx, body)

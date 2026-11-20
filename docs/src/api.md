@@ -151,6 +151,23 @@ setSheetView
 getSheetView
 ```
 
+## Protection
+
+Sheets, the file's structure and cells, protected as LibreOffice protects them:
+
+```@docs
+protectSheet
+unprotectSheet
+isSheetProtected
+getSheetProtection
+protectWorkbook
+unprotectWorkbook
+isWorkbookProtected
+getWorkbookProtection
+setCellProtection
+getCellProtection
+```
+
 ## Formatting
 
 Fonts, fills, borders and alignment:
