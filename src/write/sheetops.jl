@@ -317,6 +317,7 @@ function copysheet!(ws::Worksheet, name::AbstractString = "")
         # a sheet made by ODSFiles: its model is copied
         new = Worksheet(xf, name, n, nothing, ws.visible, deepcopy(_cached_store(ws)), nothing, ReentrantLock())
         new.formats = deepcopy(ws.formats)
+        new.props = deepcopy(ws.props)                 # visibility and tab colour (phase 5 step 6)
         for rd in new.store.rows, (j, r) in enumerate(rd.runs)
             r.data.formula === nothing && continue
             d = r.data

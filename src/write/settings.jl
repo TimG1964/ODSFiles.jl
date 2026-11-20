@@ -75,11 +75,14 @@ function _settings_copy(s::String, src::String, dst::String)
     end
 end
 
+# Whether settings.xml changes: after sheet operations, or a change of a sheet's visibility.
+_settings_edited(xf::ODSFile) = any(op -> !(op isa LineShift), xf.ops) || xf.tstyles.shown_changed
+
 """
     patched_settings(xf, s) -> String
 
 The settings `s` (settings.xml, or a flat document's office:settings) after the sheet operations
-in `xf.ops`, in order.
+in `xf.ops`, in order, and with the active sheet moved off a sheet that was hidden (phase 5 step 6).
 """
 function patched_settings(xf::ODSFile, s::String)
     for op in xf.ops
@@ -91,5 +94,6 @@ function patched_settings(xf::ODSFile, s::String)
             s = _settings_copy(s, op.src, op.dst)
         end
     end
+    xf.tstyles.shown_changed && (s = _settings_shown(xf, s))     # src/write/sheetprops.jl
     return s
 end

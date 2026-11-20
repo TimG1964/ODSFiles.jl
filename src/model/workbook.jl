@@ -34,6 +34,23 @@ mutable struct NameEdits
 end
 NameEdits() = NameEdits(UnitRange{Int}[], 0:-1)
 
+# A sheet's visibility and tab colour (its table style's), read on first use (phase 5 step 6).
+# `base`: the table style its text names; `style`: the one it has now (`base`, or one ODSFiles derived).
+mutable struct SheetProps
+    display::Bool
+    tabcolor::Union{Nothing,String}   # "#rrggbb"
+    base::Union{Nothing,String}
+    style::Union{Nothing,String}
+end
+
+# The table styles ODSFiles derived (name => XML), and whether a sheet's visibility changed (the
+# active sheet may then have to move, as in LibreOffice).
+mutable struct TableStyleEdits
+    added::Vector{Pair{String,String}}
+    shown_changed::Bool
+end
+TableStyleEdits() = TableStyleEdits(Pair{String,String}[], false)
+
 """
     Worksheet
 
@@ -56,11 +73,12 @@ mutable struct Worksheet
     opstart::Int                      # operations already in its text (a copy's: those before the copy)
     copied::Bool                      # a copy made by `copysheet!`: its text is its own, not the file's
     nameedits::NameEdits              # its local names deleted, and where they are (phase 5)
+    props::Union{Nothing,SheetProps}  # visibility and tab colour, once read (phase 5)
 end
 
 Worksheet(xf, name, index, entry, visible, store, localnames, lock) =
     Worksheet(xf, name, index, entry, visible, store, localnames, lock, Dict{Int,Vector{Int}}(), nothing, nothing, nothing, 0, false,
-              NameEdits())
+              NameEdits(), nothing)
 
 # Whether the sheet was made by ODSFiles (so it is written whole), not read from the file.
 isnewsheet(ws::Worksheet) = ws.entry === nothing
@@ -91,14 +109,15 @@ mutable struct ODSFile
     extras::Vector{Any}               # database ranges added by sheet copies: (XML, operations already applied)
     objcopies::Vector{Pair{String,String}}   # embedded objects duplicated by sheet copies ("Object 1" => "Object 3")
     nameedits::NameEdits              # workbook names deleted, and where they are (phase 5)
+    tstyles::TableStyleEdits          # table styles ODSFiles derived (phase 5)
 end
 
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, false, nothing,
-            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits())
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits())
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io,
-            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits())
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits())
 
 #
 # The sheet index is built as far as it is needed: `xf["Sheet1"]` or `xf[1]` finds the first

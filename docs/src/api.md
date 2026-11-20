@@ -111,6 +111,22 @@ getAllDefinedNames
 DefinedName
 ```
 
+## Hiding and tab colours
+
+Hidden rows and columns, hidden sheets and tab colours, stored as LibreOffice stores them.
+
+```@docs
+setRowHidden
+setColumnHidden
+isRowHidden
+isColumnHidden
+setSheetVisibility
+getSheetVisibility
+setTabColor
+getTabColor
+removeTabColor
+```
+
 ## Formatting
 
 Fonts, fills, borders and alignment:

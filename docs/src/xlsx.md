@@ -60,6 +60,10 @@ The formatting functions work as in XLSX.jl too, with the differences listed in
   sheet, whole columns and rows can be named, and `Bool` constants stay `Bool`. A formula's
   sheet names without `$` are relative, as in LibreOffice. ODF has no system names, so `force` and
   `include_system` change nothing.
+- **Hiding** ([`setRowHidden`](@ref), [`setColumnHidden`](@ref), [`setSheetVisibility`](@ref)) and
+  **tab colours** ([`setTabColor`](@ref)) take XLSX.jl's arguments. ODF has no very hidden sheets:
+  `:veryHidden` hides a sheet as `:hidden` does, as LibreOffice imports Excel's. Theme colours are
+  not accepted, as elsewhere in ODSFiles.
 - **Not yet available:**
   Excel-style tables, conditional formats, comments, images and charts, and `writetable`'s
   `as_table` and `freeze_header`.

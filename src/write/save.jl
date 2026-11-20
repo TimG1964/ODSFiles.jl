@@ -41,7 +41,7 @@ end
 function write_new_content(io::IO, xf::ODSFile, version; display::Bool = true)
     svg, faces = _faces(xf)
     print(io, _XMLDECL, "<office:document-content", _NS_DECL, svg, " office:version=\"", version, "\">",
-          faces, "<office:automatic-styles>", added_styles_xml(xf.styles, used_styles(xf)), "</office:automatic-styles>")
+          faces, "<office:automatic-styles>", added_styles_xml(xf.styles, used_styles(xf)), _table_styles_xml(xf), "</office:automatic-styles>")
     _write_body(io, xf; display)
     print(io, "</office:document-content>")
     return nothing
@@ -148,7 +148,7 @@ function _patched_part_data(xf::ODSFile, name::String, content)
     cont = xf.container
     name == "content.xml" && return content
     name == "styles.xml" && has_named_styles(xf.styles) && return patched_styles(xf, String(read_bytes(cont, name)))
-    if name == "settings.xml" && any(op -> !(op isa LineShift), xf.ops)
+    if name == "settings.xml" && _settings_edited(xf)
         b = read_bytes(cont, name)
         s = patched_settings(xf, String(copy(b)))
         return codeunits(s) == b ? b : s

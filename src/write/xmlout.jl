@@ -470,7 +470,10 @@ function write_table(io::IO, ws::Worksheet; display::Bool = true)
     s = _cached_store(ws)
     f = ws.formats
     styles = get_odsfile(ws).styles
-    print(io, "<table:table table:name=\""); _escape_attr(io, ws.name); print(io, "\">")
+    print(io, "<table:table table:name=\""); _escape_attr(io, ws.name); print(io, '"')
+    p = ws.props                                   # a derived table style (phase 5 step 6)
+    (p === nothing || p.style === nothing) || (print(io, " table:style-name=\""); _escape_attr(io, p.style); print(io, '"'))
+    print(io, '>')
     dim = store_dimension(s)
     ncols = dim === nothing ? 1 : column_number(dim.stop)
     if f === nothing

@@ -586,7 +586,7 @@ function write_patched_table(out::_ChunkedIO, ws::Worksheet; display::Bool = tru
     sp = XML.sourcespan(node)
     st = _PatchState(ws, store, get_odsfile(ws).styles, src, out,
                      first(sp), 1, 0, need, false, false, drows, dcols, erows, f, display, rw, ws.entry.name, 0, 0, -1)
-    ws.name == ws.entry.name || _renamed_start_tag!(st, ws)
+    (ws.name != ws.entry.name || _props_changed(ws)) && _renamed_start_tag!(st, ws)
     if ws.rowmap !== nothing || ws.colmap !== nothing
         st.posrow = 0
         _walk_mapped!(st, node, :table)        # rows or columns inserted or deleted (phase 5)
@@ -612,8 +612,12 @@ function _table_start_tag(ws::Worksheet, rw::Union{Nothing,RefRewriter}, src::St
         rewrite_xml(io, rw, src, a, e; sheet = ws.entry.name)
         tag = String(take!(io))
     end
-    ws.name == ws.entry.name && return tag
-    return _set_attrs(tag, Pair{String,Union{Nothing,String}}["table:name" => _escape_attr(ws.name)]; open = true)
+    changed = _props_changed(ws)                   # its table style (phase 5 step 6)
+    ws.name == ws.entry.name && !changed && return tag
+    ch = Pair{String,Union{Nothing,String}}[]
+    ws.name == ws.entry.name || push!(ch, "table:name" => _escape_attr(ws.name))
+    changed && push!(ch, "table:style-name" => (ws.props.style === nothing ? nothing : _escape_attr(ws.props.style)))
+    return _set_attrs(tag, ch; open = true)
 end
 
 function _renamed_start_tag!(st::_PatchState, ws::Worksheet)
@@ -811,7 +815,7 @@ function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = tru
         # edited sheets (and, after structural edits, every other sheet: its references are rewritten)
         for ws in orig
             sp = spans[ws]
-            (_has_edits(ws) || rw !== nothing || ws.name != ws.entry.name || _names_edited(ws)) &&
+            (_has_edits(ws) || rw !== nothing || ws.name != ws.entry.name || _names_edited(ws) || _props_changed(ws)) &&
                 push!(splices, (first(sp), last(sp), io -> _write_sheet(io, ws, rw; display)))
         end
         # new sheets (and copies), after the last one
@@ -846,12 +850,12 @@ function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = tru
     end
     # a flat document's settings (phase 5): the sheets' entries follow renames, deletes and copies
     setnode = get(kids, "office:settings", nothing)
-    if setnode !== nothing && any(op -> !(op isa LineShift), xf.ops)
+    if setnode !== nothing && _settings_edited(xf)
         sp = XML.sourcespan(setnode)
         push!(splices, (first(sp), last(sp), patched_settings(xf, String(SubString(src, first(sp), last(sp))))))
     end
     # typed and formatting styles (before the sheets are written, which add none)
-    sx = added_styles_xml(xf.styles, used_styles(xf))
+    sx = added_styles_xml(xf.styles, used_styles(xf)) * _table_styles_xml(xf)     # table styles: phase 5 step 6
     if !isempty(sx)
         _append_splice!(splices, src, autostyles, "office:automatic-styles", sx, body)
     end

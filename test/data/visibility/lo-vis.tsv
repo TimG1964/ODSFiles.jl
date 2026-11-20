@@ -1,0 +1,18 @@
+S1 rows 3:4 hidden	ok	ok
+S1 cols C:D hidden	ok	ok
+S1 row 6 filtered	ok
+S2 hidden	ok
+S3 tab red	ok
+S4 tab then none	ok	ok
+S5 tab and hidden	ok	ok
+S6 active, hidden	ok
+active after	S4
+S1	IsVisible=True	TabColor=-1
+S2	IsVisible=False	TabColor=-1
+S3	IsVisible=True	TabColor=16711680
+S4	IsVisible=True	TabColor=-1
+S5	IsVisible=False	TabColor=32768
+S6	IsVisible=False	TabColor=-1
+one: hide Two	ok
+one: hide the last visible	ok
+one: visible after	True	False
