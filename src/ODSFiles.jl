@@ -82,6 +82,8 @@ include("write/xmlout.jl")
 include("write/rewrite.jl")
 include("write/patch.jl")
 include("write/patchmap.jl")
+include("write/settings.jl")
+include("write/sheetops.jl")
 include("write/save.jl")
 include("write/stream.jl")
 include("write/writetable.jl")
@@ -104,7 +106,8 @@ export
     setColumnWidth, setRowHeight, autofitColumns,
     setCellStyle, addCellStyle!,
     # sheets (phase 5)
-    insertRows, insertColumns, deleteRows, deleteColumns
+    insertRows, insertColumns, deleteRows, deleteColumns,
+    renamesheet!, deletesheet!, copysheet!, movesheet!
 
 @static if VERSION >= v"1.11"
     eval(Meta.parse("public getcell, getcellrange, getFormula, get_dimension, ODSError, Cell, EmptyCell, DataTable, TableRow, TableRowIterator, SheetRow, StreamWriter, StreamSheet, " *

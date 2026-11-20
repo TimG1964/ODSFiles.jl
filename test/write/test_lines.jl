@@ -4,7 +4,7 @@
 
 using ODSFiles: IndexMap, insert_lines!, delete_lines!, current_line, line_pieces, getFormula, _sheets,
     _cached_store, sheet_formats, _fmt_at, _fmt_cell, effective_style, style_name, getMergedCells,
-    open_container, read_xml, read_bytes, getFont, getColumnWidth, ODSError
+    open_container, read_xml, read_bytes, getFont, getColumnWidth, ODSError, sheetcount
 
 @testset "IndexMap" begin
     m = IndexMap(20)
@@ -92,7 +92,7 @@ end
 
 # The references of a saved document, keyed as experiment 021 keys them (formulas by their N("key")
 # marker, with the cell they are in; other elements by name or order), in every content part.
-function saved_refs(path)
+function saved_refs(path; keysheet::Bool = false)
     c = open_container(path)
     xmls = [read_xml(c, :content)]
     if c.zip !== nothing
@@ -104,7 +104,7 @@ function saved_refs(path)
     ord = Dict{String,Int}()
     for (i, x) in enumerate(xmls)
         doc = XML.read(IOBuffer(x), XML.Node)
-        walk_refs!(items, ord, doc, "", Ref(0), Ref(0), i > 1)       # embedded objects' parts
+        walk_refs!(items, ord, doc, "", Ref(0), Ref(0), i > 1; keysheet)       # embedded objects' parts
     end
     return items
 end
@@ -113,8 +113,8 @@ const _KEEP = ("table:formula", "table:expression", "table:condition", "table:ce
                "table:target-range-address", "table:print-ranges", "table:end-cell-address", "chart:values-cell-range-address",
                "chart:label-cell-address", "calcext:value", "calcext:base-cell-address", "calcext:target-range-address")
 
-function walk_refs!(items, ord, n, sheet, row, col, inobj)
-    rec(c) = walk_refs!(items, ord, c, sheet, row, col, inobj)
+function walk_refs!(items, ord, n, sheet, row, col, inobj; keysheet::Bool = false)
+    rec(c) = walk_refs!(items, ord, c, sheet, row, col, inobj; keysheet)
     XML.nodetype(n) === XML.Element || (foreach(rec, something(XML.children(n), [])); return)
     t = XML.tag(n)
     a = something(XML.attributes(n), Dict{String,String}())
@@ -130,7 +130,7 @@ function walk_refs!(items, ord, n, sheet, row, col, inobj)
         col[] += 1
         if haskey(a, "table:formula")
             m = match(r"N\(\"(\w+)\"\)", a["table:formula"])
-            k = m === nothing ? "cell:$(sheet)!R$(row[])C$(col[])" : "formula:" * m.captures[1]
+            k = m === nothing ? "cell:$(sheet)!R$(row[])C$(col[])" : "formula:" * m.captures[1] * (keysheet ? "@" * sheet : "")
             items[(k, "table:formula")] = a["table:formula"]
             items[(k, "@cell")] = "$(sheet)!R$(row[])C$(col[])"
         end
@@ -147,7 +147,7 @@ function walk_refs!(items, ord, n, sheet, row, col, inobj)
         end
     end
     # a chart embedded in a flat file: what is inside draw:object is the object's
-    t == "draw:object" ? foreach(c -> walk_refs!(items, ord, c, sheet, row, col, true), kids) : foreach(rec, kids)
+    t == "draw:object" ? foreach(c -> walk_refs!(items, ord, c, sheet, row, col, true; keysheet), kids) : foreach(rec, kids)
 end
 
 # Applies an operation of the oracle (its name: "ins_r5_1", "del_other_c2_3", …) through the API.
@@ -219,14 +219,14 @@ end
         got = saved_refs(path)
         want = o[name]
         for ((k, a), v) in want
-            (a == "@value" || _known_gap(k) || a == "draw:notify-on-update-of-ranges" || startswith(k, "calcext:condition") ||
+            (a == "@value" || _known_gap(k) || a == "draw:notify-on-update-of-ranges" || startswith(k, "calcext:condition[") ||
              startswith(k, "style:map") || startswith(k, "chart:chart") || startswith(k, "text:a")) && continue
             n += 1
             g = get(got, (k, a), "(none)")
             g == v || push!(fails, "$name $k $a: ODSFiles `$g`, LibreOffice `$v`")
         end
         for (k, a) in keys(got)
-            (_known_gap(k) || startswith(k, "calcext:condition") || haskey(want, (k, a))) && continue
+            (_known_gap(k) || startswith(k, "calcext:condition[") || haskey(want, (k, a))) && continue
             push!(fails, "$name $k $a: only in ODSFiles' file")
         end
         # the conditional format, by meaning (LibreOffice re-bases it on every save, F-044)

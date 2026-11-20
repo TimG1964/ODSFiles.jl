@@ -40,10 +40,12 @@ mutable struct Worksheet
     formats::Union{Nothing,SheetFormats}   # read on first use by formatting (phase 4)
     rowmap::Union{Nothing,IndexMap}   # rows and columns inserted or deleted since the sheet was read
     colmap::Union{Nothing,IndexMap}   #   (phase 5: original → current lines), or nothing
+    opstart::Int                      # operations already in its text (a copy's: those before the copy)
+    copied::Bool                      # a copy made by `copysheet!`: its text is its own, not the file's
 end
 
 Worksheet(xf, name, index, entry, visible, store, localnames, lock) =
-    Worksheet(xf, name, index, entry, visible, store, localnames, lock, Dict{Int,Vector{Int}}(), nothing, nothing, nothing)
+    Worksheet(xf, name, index, entry, visible, store, localnames, lock, Dict{Int,Vector{Int}}(), nothing, nothing, nothing, 0, false)
 
 # Whether the sheet was made by ODSFiles (so it is written whole), not read from the file.
 isnewsheet(ws::Worksheet) = ws.entry === nothing
@@ -70,14 +72,17 @@ mutable struct ODSFile
     scanner::Union{Nothing,BodyScanner}   # the sheet index, found as far as needed (phase 3)
     lock::ReentrantLock
     ops::Vector{Any}                  # structural edits since the file was read, in order (phase 5: `RefOp`s)
+    gone::Vector{Any}                 # sheets read from the file and deleted since (phase 5)
+    extras::Vector{Any}               # database ranges added by sheet copies: (XML, operations already applied)
+    objcopies::Vector{Pair{String,String}}   # embedded objects duplicated by sheet copies ("Object 1" => "Object 3")
 end
 
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, false, nothing,
-            nothing, ReentrantLock(), Any[])
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[])
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io,
-            nothing, ReentrantLock(), Any[])
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[])
 
 #
 # The sheet index is built as far as it is needed: `xf["Sheet1"]` or `xf[1]` finds the first

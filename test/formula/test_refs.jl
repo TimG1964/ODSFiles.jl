@@ -39,7 +39,7 @@ basesheet(addr) = something(parse_ref(addr)[1].sheet, "")
 # A conditional format's references as seen from its target's top-left cell: what it means.
 function cf_meaning(cond, base, target)
     b = parse_ref(base)[1]
-    tl = parse_ref(first(split(target, ' ')))[1]
+    tl = parse_ref(SubString(target, ODSFiles._areas(String(target))[1]...))[1]
     out = String[]
     for t in tokenize_formula(cond)
         t.kind === FT_REF || continue

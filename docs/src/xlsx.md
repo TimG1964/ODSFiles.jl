@@ -50,6 +50,9 @@ The formatting functions work as in XLSX.jl too, with the differences listed in
   LibreOffice does: a deleted reference is stored as `#REF!` without its sheet, 3-D references
   follow, new rows copy the formatting of the row above (borders included), and new columns
   that of the column to their left, with the width of the column they push right.
-- **Not yet available:** other sheet operations (renaming, copying, moving, deleting sheets),
+- **Sheet operations** ([`renamesheet!`](@ref), [`deletesheet!`](@ref), [`copysheet!`](@ref),
+  [`movesheet!`](@ref)) take XLSX.jl's arguments and behave as LibreOffice does; a copy repoints only
+  references whose sheet name is relative, and a name already in use is an error.
+- **Not yet available:**
   Excel-style tables, conditional formats, comments, images and charts, and `writetable`'s
   `as_table` and `freeze_header`.

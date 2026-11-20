@@ -586,6 +586,7 @@ function write_patched_table(out::_ChunkedIO, ws::Worksheet; display::Bool = tru
     sp = XML.sourcespan(node)
     st = _PatchState(ws, store, get_odsfile(ws).styles, src, out,
                      first(sp), 1, 0, need, false, false, drows, dcols, erows, f, display, rw, ws.entry.name, 0, 0, -1)
+    ws.name == ws.entry.name || _renamed_start_tag!(st, ws)
     if ws.rowmap !== nothing || ws.colmap !== nothing
         st.posrow = 0
         _walk_mapped!(st, node, :table)        # rows or columns inserted or deleted (phase 5)
@@ -594,6 +595,70 @@ function write_patched_table(out::_ChunkedIO, ws::Worksheet; display::Bool = tru
     end
     _copy_to!(st, nextind(src, last(sp)))      # the rest of the table, verbatim
     return nothing
+end
+
+# A renamed sheet's start tag: its references replayed, its `table:name` the new one (phase 5).
+function _table_start_tag(ws::Worksheet, rw::Union{Nothing,RefRewriter}, src::String, a::Int, e::Int)
+    if rw === nothing
+        tag = String(SubString(src, a, e))
+    else
+        io = IOBuffer()
+        rewrite_xml(io, rw, src, a, e; sheet = ws.entry.name)
+        tag = String(take!(io))
+    end
+    ws.name == ws.entry.name && return tag
+    return _set_attrs(tag, Pair{String,Union{Nothing,String}}["table:name" => _escape_attr(ws.name)]; open = true)
+end
+
+function _renamed_start_tag!(st::_PatchState, ws::Worksheet)
+    a = st.pos
+    e = a - 1 + _start_tag_end(SubString(st.src, a))
+    print(st.out, _table_start_tag(ws, st.rw, st.src, a, e))
+    st.pos = e + 1
+    return
+end
+
+# The operations a sheet's text is to be rewritten by: the file's (`rw`, built once for
+# content.xml), or a copy's own (those after the copy, on its own text). Nothing if none.
+function _sheet_rewriter(ws::Worksheet, rw::Union{Nothing,RefRewriter})
+    xf = get_odsfile(ws)
+    if ws.copied
+        ops = xf.ops[ws.opstart+1:end]
+        any(op -> !(op isa SheetCopy), ops) || return nothing
+        return RefRewriter(ops, parent(XML.sourcetext(ws.entry.node)))
+    end
+    rw !== nothing && return rw
+    any(op -> !(op isa SheetCopy), xf.ops) || return nothing
+    return RefRewriter(xf.ops, xf.content)
+end
+
+# Text through the operations `ops` (a database range added by a copy).
+function _rewritten(x::String, ops)
+    isempty(ops) && return x
+    io = IOBuffer()
+    rewrite_xml(io, RefRewriter(Any[ops...], x), x, 1, ncodeunits(x))
+    return String(take!(io))
+end
+
+"""
+    _write_sheet(out, ws, rw; display)
+
+One sheet's table as it is now: written from the model (a sheet made by ODSFiles), patched (an
+edited sheet read from the file, or a copy), or copied with its references replayed and its name
+set (phase 5).
+"""
+function _write_sheet(out::_ChunkedIO, ws::Worksheet, rw::Union{Nothing,RefRewriter}; display::Bool = true)
+    ws.entry === nothing && return write_table(out, ws; display)
+    srw = _sheet_rewriter(ws, ws.copied ? nothing : rw)
+    _has_edits(ws) && return write_patched_table(out, ws; display, rw = srw)
+    node = ws.entry.node
+    src = parent(XML.sourcetext(node))
+    sp = XML.sourcespan(node)
+    a = first(sp); b = last(sp)
+    e = a - 1 + _start_tag_end(SubString(src, a, b))
+    print(out, _table_start_tag(ws, srw, src, a, e))
+    srw === nothing ? print(out, SubString(src, e + 1, b)) : rewrite_xml(out, srw, src, e + 1, b; sheet = ws.entry.name)
+    return
 end
 
 const _NAMESPACES = [
@@ -716,25 +781,50 @@ function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = tru
     nx = xf.container.format === :fods ? named_styles_xml(xf.styles) : ""
     isempty(nx) || _append_splice!(splices, src, stylesnode, "office:styles", nx, something(autostyles, body, Some(nothing)))
     # structural edits (phase 5): their references are replayed on all the text that is copied
-    rw = isempty(xf.ops) ? nothing : RefRewriter(xf.ops, String(src))
-    # edited sheets (and, after structural edits, every other sheet: its references are rewritten)
-    last_table_end = 0
-    for ws in _sheets(xf)
-        ws.entry === nothing && continue
-        sp = XML.sourcespan(ws.entry.node)
-        last_table_end = max(last_table_end, last(sp))
-        if _has_edits(ws)
-            push!(splices, (first(sp), last(sp), io -> write_patched_table(io, ws; display, rw)))
-        elseif rw !== nothing
-            name = ws.entry.name
-            push!(splices, (first(sp), last(sp), io -> rewrite_xml(io, rw, src, first(sp), last(sp); sheet = name)))
+    rw = any(op -> !(op isa SheetCopy), xf.ops) ? RefRewriter(xf.ops, String(src)) : nothing
+    sheets = _sheets(xf)
+    orig = [ws for ws in sheets if ws.entry !== nothing && !ws.copied]
+    spans = Dict(ws => XML.sourcespan(ws.entry.node) for ws in vcat(orig, Worksheet[w for w in xf.gone]))
+    last_table_end = isempty(spans) ? 0 : maximum(last, values(spans))
+    # deleted, copied or moved sheets (phase 5): the tables are written in their new order
+    k = findfirst(ws -> ws.entry === nothing || ws.copied, sheets)
+    restructured = !isempty(xf.gone) || !issorted(orig; by = ws -> first(spans[ws])) ||
+                   (k !== nothing && any(ws -> ws.entry !== nothing && !ws.copied, sheets[k:end]))
+    if restructured && !isempty(spans)
+        a = minimum(first, values(spans))
+        push!(splices, (a, last_table_end, io -> foreach(ws -> _write_sheet(io, ws, rw; display), sheets)))
+    else
+        # edited sheets (and, after structural edits, every other sheet: its references are rewritten)
+        for ws in orig
+            sp = spans[ws]
+            (_has_edits(ws) || rw !== nothing || ws.name != ws.entry.name) &&
+                push!(splices, (first(sp), last(sp), io -> _write_sheet(io, ws, rw; display)))
+        end
+        # new sheets (and copies), after the last one
+        newsheets = [ws for ws in sheets if ws.entry === nothing || ws.copied]
+        if !isempty(newsheets)
+            at = last_table_end > 0 ? nextind(src, last_table_end) : _spreadsheet_end(body, src)
+            push!(splices, (at, at - 1, io -> foreach(ws -> _write_sheet(io, ws, rw; display), newsheets)))
         end
     end
-    # new sheets, after the last one
-    newsheets = [ws for ws in _sheets(xf) if ws.entry === nothing]
-    if !isempty(newsheets)
-        at = last_table_end > 0 ? nextind(src, last_table_end) : _spreadsheet_end(body, src)
-        push!(splices, (at, at - 1, io -> foreach(ws -> write_table(io, ws; display), newsheets)))
+    # database ranges added by copies (phase 5), through the operations after each copy
+    if !isempty(xf.extras)
+        x = join(_rewritten(xx, xf.ops[n+1:end]) for (xx, n) in xf.extras)
+        k = findlast("</table:database-ranges>", src)
+        if k !== nothing
+            push!(splices, (first(k), first(k) - 1, x))
+        else
+            ne = findlast("</table:named-expressions>", src)
+            at = ne !== nothing && last(ne) > last_table_end ? last(ne) + 1 :
+                 last_table_end > 0 ? nextind(src, last_table_end) : _spreadsheet_end(body, src)
+            push!(splices, (at, at - 1, "<table:database-ranges>" * x * "</table:database-ranges>"))
+        end
+    end
+    # a flat document's settings (phase 5): the sheets' entries follow renames, deletes and copies
+    setnode = get(kids, "office:settings", nothing)
+    if setnode !== nothing && any(op -> !(op isa LineShift), xf.ops)
+        sp = XML.sourcespan(setnode)
+        push!(splices, (first(sp), last(sp), patched_settings(xf, String(SubString(src, first(sp), last(sp))))))
     end
     # typed and formatting styles (before the sheets are written, which add none)
     sx = added_styles_xml(xf.styles, used_styles(xf))

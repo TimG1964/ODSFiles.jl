@@ -85,6 +85,18 @@ deleteRows
 deleteColumns
 ```
 
+## Sheet operations
+
+Renaming, deleting, copying and moving sheets, with references following as they follow in
+LibreOffice.
+
+```@docs
+renamesheet!
+deletesheet!
+copysheet!
+movesheet!
+```
+
 ## Formatting
 
 Fonts, fills, borders and alignment:

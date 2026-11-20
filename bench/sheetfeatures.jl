@@ -3,6 +3,9 @@
 #
 #   julia --project=<env with XLSX and ODSFiles> bench/sheetfeatures.jl [results.tsv]
 #
+# Cases: 10 rows inserted at row 2, rows 2–11 deleted, a column inserted and deleted at B, and
+# the sheet renamed (phase 5 step 4).
+#
 # Each case times opening the fixture with mode "rw", the operation, and a save to an IOBuffer (as
 # run.jl's edit_one_cell does). The median of 3 runs (after a warm-up) is kept, with its allocation. Ratio =
 # ODSFiles / XLSX.jl time. BENCH_FIXTURES (comma-separated) chooses the fixtures.
@@ -20,6 +23,7 @@ const CASES = [
     "delete_rows_save" => ((s) -> XLSX.deleteRows(s, 2:11), (s) -> ODS.deleteRows(s, 2:11)),
     "insert_cols_save" => ((s) -> XLSX.insertColumns(s, 2), (s) -> ODS.insertColumns(s, 2)),
     "delete_cols_save" => ((s) -> XLSX.deleteColumns(s, 2), (s) -> ODS.deleteColumns(s, 2)),
+    "rename_save"      => ((s) -> XLSX.renamesheet!(s, "Renamed sheet"), (s) -> ODS.renamesheet!(s, "Renamed sheet")),
 ]
 
 function measure(setup, f, k = 3)

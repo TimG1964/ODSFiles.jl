@@ -79,10 +79,14 @@ parts.
 """
 struct PackagePart
     name::String
-    data::Union{String,Vector{UInt8},Function}
+    data::Union{String,Vector{UInt8},Function,Nothing}   # nothing: listed in the manifest only
     mediatype::String
     compress::Bool
 end
+
+# A directory that the manifest lists with a media type but the zip holds no entry for, such as an
+# embedded chart's `Object 1/` (LibreOffice writes it so, and needs it to load the chart).
+manifest_entry(name::AbstractString, mediatype::AbstractString) = PackagePart(String(name), nothing, String(mediatype), false)
 
 function PackagePart(name::AbstractString, data::Union{AbstractString,AbstractVector{UInt8},Function};
                      mediatype::AbstractString = guess_mediatype(name),
@@ -188,6 +192,7 @@ end
 
 function _append_parts!(w::ZipArchives.ZipWriter, parts, manifest::String)
     for p in parts
+        p.data === nothing && continue       # in the manifest only
         if endswith(p.name, "/")             # a directory entry, such as Configurations2/
             ZipArchives.zip_mkdir(w, p.name)
             continue

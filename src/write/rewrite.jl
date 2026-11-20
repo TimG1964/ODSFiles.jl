@@ -45,7 +45,10 @@ function _ref_hits(s::String, a::Int = 1, b::Int = ncodeunits(s))
     return unique!(hits)
 end
 
-function RefRewriter(ops::Vector{Any}, src::String)
+# A `SheetCopy` in the log only orders things (settings.xml, D-053): its rewriting was done to the
+# copy's own text when the copy was made, so it is replayed only when asked (`withcopy`).
+function RefRewriter(ops::Vector{Any}, src::String; withcopy::Bool = false)
+    ops = withcopy ? ops : Any[op for op in ops if !(op isa SheetCopy)]
     rw = RefRewriter(ops, Dict{Tuple{String,String},Tuple{String,String}}(), src, _ref_hits(src))
     return cf_rewrites!(rw, src)
 end
@@ -136,6 +139,19 @@ function _new_attr_values(rw::RefRewriter, tag::AbstractString, attrs::Vector{Pa
                    tag == "table:content-validation"
         base = get_("table:base-cell-address")
         bs = _ctx_sheet(base, sheet)
+        # elements LibreOffice drops (F-043, F-047): a validation based on a deleted sheet, and a
+        # conditional format or database range whose target is gone
+        if tag == "table:content-validation" && base !== nothing
+            sheetops = Any[op for op in rw.ops if !(op isa LineShift)]
+            _replay(_rl, base, sheetops, bs, 0, 0) == "#REF!" && return :drop
+        end
+        for (k, dropk) in (("calcext:target-range-address", "calcext:conditional-format"),
+                           ("table:target-range-address", "table:database-range"))
+            tag == dropk || continue
+            v = get_(k)
+            v === nothing && continue
+            _replay(_rl, v, rw.ops, sheet, 0, 0; expand = k == "calcext:target-range-address") == "#REF!" && return :drop
+        end
         for (k, v) in attrs
             k in _REF_ATTRS || continue
             if k == "table:formula"
@@ -238,6 +254,7 @@ function rewrite_xml(out::IO, rw::RefRewriter, s::String, a::Int, b::Int; sheet:
     # the conditional format a condition belongs to: the last one before it in this text
     cfs = findall("<calcext:conditional-format ", SubString(s, a, b))
     for t in hits
+        t < pos && continue                         # inside an element dropped before
         e = t - 1 + _start_tag_end(SubString(s, t, b))
         name = _tag_name(SubString(s, t, e))
         if name == "calcext:condition"
@@ -262,6 +279,16 @@ function rewrite_xml(out::IO, rw::RefRewriter, s::String, a::Int, b::Int; sheet:
             r = rowof
         end
         new = _new_attr_values(rw, name, [x[1] => x[2] for x in attrs], sheet, r, col, name == "calcext:condition" ? target : nothing)
+        if new === :drop                            # the whole element goes
+            write(out, SubString(s, pos, prevind(s, t)))
+            if s[prevind(s, e)] == '/'
+                pos = e + 1
+            else
+                z = findnext("</" * name * ">", s, e)
+                pos = z === nothing ? e + 1 : last(z) + 1
+            end
+            continue
+        end
         isempty(new) && continue
         for (k, v, va, vb) in attrs
             i = findfirst(p -> p.first == k, new)

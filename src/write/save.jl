@@ -140,6 +140,22 @@ function _rewritten_part(xf::ODSFile, bytes::Vector{UInt8})
     return new == bytes ? bytes : new
 end
 
+# A part's data in a patched save: content.xml written as it is made, styles.xml with the named
+# styles, settings.xml after sheet operations, embedded objects with their references replayed
+# (phase 5), everything else as it was.
+function _patched_part_data(xf::ODSFile, name::String, content)
+    cont = xf.container
+    name == "content.xml" && return content
+    name == "styles.xml" && has_named_styles(xf.styles) && return patched_styles(xf, String(read_bytes(cont, name)))
+    if name == "settings.xml" && any(op -> !(op isa LineShift), xf.ops)
+        b = read_bytes(cont, name)
+        s = patched_settings(xf, String(copy(b)))
+        return codeunits(s) == b ? b : s
+    end
+    !isempty(xf.ops) && endswith(name, "/content.xml") && return _rewritten_part(xf, read_bytes(cont, name))
+    return read_bytes(cont, name)
+end
+
 # The parts of a zipped file that was read, with content.xml patched (D-023).
 function _patched_parts(xf::ODSFile; display::Bool = true)
     cont = xf.container
@@ -152,12 +168,29 @@ function _patched_parts(xf::ODSFile; display::Bool = true)
             push!(parts, PackagePart(name, UInt8[]; mediatype = get(mts, name, ""), compress = false))
             continue
         end
-        data = name == "content.xml" ? content :
-               name == "styles.xml" && has_named_styles(xf.styles) ? patched_styles(xf, String(read_bytes(cont, name))) :
-               !isempty(xf.ops) && endswith(name, "/content.xml") ? _rewritten_part(xf, read_bytes(cont, name)) :
-               read_bytes(cont, name)
+        data = _patched_part_data(xf, name, content)
         mt = get(mts, name, guess_mediatype(name))
         push!(parts, PackagePart(name, data; mediatype = isempty(mt) ? guess_mediatype(name) : mt))
+    end
+    # directories the manifest lists with a media type but the zip has no entry for: an embedded
+    # chart's `Object 1/` (without it LibreOffice loads the chart without its data)
+    names = Set(partnames(cont))
+    for e in cont.manifest
+        (endswith(e.path, "/") && e.path != "/" && !isempty(e.mediatype) && !(e.path in names)) || continue
+        push!(parts, manifest_entry(e.path, e.mediatype))
+    end
+    # embedded objects that sheet copies duplicated (phase 5): their parts under the new name
+    for (old, new) in xf.objcopies
+        for name in partnames(cont)
+            newname = startswith(name, old * "/") ? new * name[ncodeunits(old)+1:end] :
+                      name == "ObjectReplacements/" * old ? "ObjectReplacements/" * new : nothing
+            newname === nothing && continue
+            endswith(name, "/") && continue
+            mt = get(mts, name, guess_mediatype(name))
+            push!(parts, PackagePart(newname, _patched_part_data(xf, name, content); mediatype = isempty(mt) ? guess_mediatype(name) : mt))
+        end
+        mt = get(mts, old * "/", "")
+        isempty(mt) || push!(parts, manifest_entry(new * "/", mt))
     end
     # a package without styles.xml gets one when it needs named styles
     has_named_styles(xf.styles) && !("styles.xml" in partnames(cont)) && push!(parts, PackagePart("styles.xml", _new_styles(xf, xf.version in WRITABLE_ODF_VERSIONS ? xf.version : DEFAULT_ODF_VERSION)))
