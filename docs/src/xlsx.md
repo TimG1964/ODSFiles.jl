@@ -69,6 +69,12 @@ The formatting functions work as in XLSX.jl too, with the differences listed in
   nested containers rather than Excel's levels per line: groups next to each other stay separate,
   ungrouping removes a whole group (and lifts the groups inside it), and a range that crosses a
   group, or an eighth level, is an error.
+- **Panes and the sheet view** ([`freezePanes`](@ref), [`splitPanes`](@ref), [`setSheetView`](@ref),
+  [`getSheetView`](@ref)) take XLSX.jl's arguments and are kept as LibreOffice keeps them, in its view
+  settings: the page-break view, row and column headers and zeros are the whole file's; a selection
+  is kept as its cursor only; zoom runs from 20 to 600; LibreOffice has no page layout view and no
+  "frozen split" (`splitFreeze` freezes). A split's position is in screen pixels, so it falls at the
+  edge of the rows and columns given on a 96-dpi screen at 100% zoom.
 - **Not yet available:**
   Excel-style tables, conditional formats, comments, images and charts, and `writetable`'s
   `as_table` and `freeze_header`.

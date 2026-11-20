@@ -365,6 +365,7 @@ function copysheet!(ws::Worksheet, name::AbstractString = "")
         new.copied = true
     end
     push!(xf.sheets, new)
+    haskey(xf.views.sheets, ws) && (xf.views.sheets[new] = copy(xf.views.sheets[ws]))   # its view (phase 5 step 8)
     if !isnewfile(xf)
         _copy_database_ranges!(xf, ws.name, name, op)
         push!(xf.ops, op)                          # orders the settings; its text rewriting is done

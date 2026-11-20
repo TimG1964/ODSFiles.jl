@@ -55,7 +55,7 @@ end
     v(dn) = DefinedName(NameDef(dn, nothing, nothing, lo["|" * dn][3], "\$S.\$A\$1"))
     @test v("multi").value == nc("S", CellRange("A1:A2"), CellRef("C1"))   # `;` between the areas
     @test v("multi2").value == v("multi").value && v("multi2").absolute == [true, true]
-    @test v("num").value === 42 && v("txt").value == "hi" && v("frm").value == "=SUM(\$S.\$A\$1:\$A\$3)*2"
+    @test v("num").value === Int64(42) && v("txt").value == "hi" && v("frm").value == "=SUM(\$S.\$A\$1:\$A\$3)*2"
     rel = DefinedName(NameDef("rel", nothing, ".B2", nothing, "\$S.\$A\$1"))       # no sheet: the base's
     @test rel.value == ref("S.B2") && rel.absolute == false
 end

@@ -138,6 +138,19 @@ getRowOutlineLevel
 getColumnOutlineLevel
 ```
 
+## Panes and the sheet view
+
+How a sheet looks when LibreOffice opens it, kept in its view settings (settings.xml):
+
+```@docs
+freezePanes
+splitFreeze
+splitPanes
+removePanes
+setSheetView
+getSheetView
+```
+
 ## Formatting
 
 Fonts, fills, borders and alignment:

@@ -39,6 +39,7 @@ NameEdits() = NameEdits(UnitRange{Int}[], 0:-1)
 mutable struct SheetProps
     display::Bool
     tabcolor::Union{Nothing,String}   # "#rrggbb"
+    rtl::Bool                         # right to left (`style:writing-mode`, phase 5 step 8)
     base::Union{Nothing,String}
     style::Union{Nothing,String}
 end
@@ -50,6 +51,15 @@ mutable struct TableStyleEdits
     shown_changed::Bool
 end
 TableStyleEdits() = TableStyleEdits(Pair{String,String}[], false)
+
+# The view settings set since the file was read (phase 5 step 8): per sheet (by the sheet, so that
+# they follow renames) and for the whole view; each item's (config:type, value), or `nothing` to remove it.
+const ViewItems = Dict{String,Union{Nothing,Tuple{String,String}}}
+mutable struct ViewEdits
+    sheets::IdDict{Any,ViewItems}
+    view::ViewItems
+end
+ViewEdits() = ViewEdits(IdDict{Any,ViewItems}(), ViewItems())
 
 """
     Worksheet
@@ -110,14 +120,15 @@ mutable struct ODSFile
     objcopies::Vector{Pair{String,String}}   # embedded objects duplicated by sheet copies ("Object 1" => "Object 3")
     nameedits::NameEdits              # workbook names deleted, and where they are (phase 5)
     tstyles::TableStyleEdits          # table styles ODSFiles derived (phase 5)
+    views::ViewEdits                  # view settings set (phase 5)
 end
 
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, false, nothing,
-            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits())
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits())
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io,
-            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits())
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits())
 
 #
 # The sheet index is built as far as it is needed: `xf["Sheet1"]` or `xf[1]` finds the first

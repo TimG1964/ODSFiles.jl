@@ -106,8 +106,12 @@ new_meta_xml(version) =
 
 function write_new_flat(io::IO, xf::ODSFile, version, mediatype; display::Bool = true)
     svg, faces = _faces(xf)
-    print(io, _XMLDECL, "<office:document", _NS_DECL, svg, " office:version=\"", version, "\" office:mimetype=\"", mediatype, "\">",
-          _meta_body(), faces, replace(_STYLES_BODY, "</office:styles>" => named_styles_xml(xf.styles) * "</office:styles>"), "<office:automatic-styles>", added_styles_xml(xf.styles, used_styles(xf)), "</office:automatic-styles>")
+    # view settings (phase 5 step 8): office:settings after the meta, with the namespaces LibreOffice needs to read them
+    vs = _views_edited(xf) ? _settings_views(xf, "<office:settings></office:settings>") : ""
+    vns = isempty(vs) ? "" : " xmlns:config=\"$_CONFIG_NS\" xmlns:ooo=\"$_OOO_NS\""
+    print(io, _XMLDECL, "<office:document", _NS_DECL, svg, vns, " office:version=\"", version, "\" office:mimetype=\"", mediatype, "\">",
+          _meta_body(), vs, faces, replace(_STYLES_BODY, "</office:styles>" => named_styles_xml(xf.styles) * "</office:styles>"), "<office:automatic-styles>", added_styles_xml(xf.styles, used_styles(xf)), _table_styles_xml(xf),
+          "</office:automatic-styles>")
     _write_body(io, xf; display)
     print(io, "</office:document>")
     return nothing
@@ -193,6 +197,9 @@ function _patched_parts(xf::ODSFile; display::Bool = true)
         mt = get(mts, old * "/", "")
         isempty(mt) || push!(parts, manifest_entry(new * "/", mt))
     end
+    # a package without settings.xml gets one when views were set (phase 5 step 8)
+    _views_edited(xf) && !("settings.xml" in partnames(cont)) &&
+        push!(parts, PackagePart("settings.xml", _settings_views(xf, _new_settings_xml(xf.version in WRITABLE_ODF_VERSIONS ? xf.version : DEFAULT_ODF_VERSION))))
     # a package without styles.xml gets one when it needs named styles
     has_named_styles(xf.styles) && !("styles.xml" in partnames(cont)) && push!(parts, PackagePart("styles.xml", _new_styles(xf, xf.version in WRITABLE_ODF_VERSIONS ? xf.version : DEFAULT_ODF_VERSION)))
     return parts
@@ -231,6 +238,7 @@ function writeods(dest::Union{AbstractString,IO}, xf::ODSFile; overwrite::Bool =
             parts = [PackagePart("content.xml", io -> write_new_content(io, xf, version; display)),
                      PackagePart("styles.xml", _new_styles(xf, version)),
                      PackagePart("meta.xml", new_meta_xml(version))]
+            _views_edited(xf) && push!(parts, PackagePart("settings.xml", _settings_views(xf, _new_settings_xml(version))))
             write_package(dest, parts; mediatype = mt, version)
         end
     else

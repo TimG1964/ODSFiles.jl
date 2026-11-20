@@ -150,40 +150,43 @@ end
 
 const _TABLE_PROPS_RX = r"<style:table-properties\b[^>]*?/?>"
 
-# (display, tab colour) of a table style's XML. LibreOffice writes `table:tab-color` in ODF 1.3 and
-# later, and `tableooo:tab-color` before (F-051).
+# (display, tab colour, right to left) of a table style's XML. LibreOffice writes `table:tab-color`
+# in ODF 1.3 and later, and `tableooo:tab-color` before (F-051); the direction is
+# `style:writing-mode` (`rl-tb`, F-053).
 function _table_style_props(x::Union{Nothing,String})
-    x === nothing && return (true, nothing)
+    x === nothing && return (true, nothing, false)
     m = match(_TABLE_PROPS_RX, x)
-    m === nothing && return (true, nothing)
+    m === nothing && return (true, nothing, false)
     d = _start_tag_attr(m.match, "table:display")
     c = something(_start_tag_attr(m.match, "table:tab-color"), _start_tag_attr(m.match, "tableooo:tab-color"), Some(nothing))
-    return (d != "false", c === nothing ? nothing : lowercase(c))
+    w = _start_tag_attr(m.match, "style:writing-mode")
+    return (d != "false", c === nothing ? nothing : lowercase(c), w !== nothing && startswith(w, "rl"))
 end
 
 # A sheet's properties, read on first use.
 function _sheet_props(ws::Worksheet)
     ws.props === nothing || return ws.props
     name = _table_style_name(ws)
-    d, c = _table_style_props(name === nothing ? nothing : _table_style_xml(get_odsfile(ws), name))
-    ws.props = SheetProps(d, c, name, name)
+    d, c, rtl = _table_style_props(name === nothing ? nothing : _table_style_xml(get_odsfile(ws), name))
+    ws.props = SheetProps(d, c, rtl, name, name)
     return ws.props
 end
 
 # The table style with these properties: the sheet's own if it has them, else one derived from it
 # (reused when one with the same XML exists).
-function _restyle_table!(ws::Worksheet, display::Bool, color::Union{Nothing,String})
+function _restyle_table!(ws::Worksheet, display::Bool, color::Union{Nothing,String}; rtl::Bool = _sheet_props(ws).rtl)
     xf = get_odsfile(ws)
     p = _sheet_props(ws)
     base = p.base
-    bd, bc = _table_style_props(base === nothing ? nothing : _table_style_xml(xf, base))
+    bd, bc, br = _table_style_props(base === nothing ? nothing : _table_style_xml(xf, base))
     p.display = display
     p.tabcolor = color
-    if base !== nothing && bd == display && bc == color
+    p.rtl = rtl
+    if base !== nothing && bd == display && bc == color && br == rtl
         p.style = base                                   # back as it was: the text's own style
         return
     end
-    if base === nothing && display && color === nothing
+    if base === nothing && display && color === nothing && !rtl
         p.style = nothing
         return
     end
@@ -199,8 +202,10 @@ function _restyle_table!(ws::Worksheet, display::Bool, color::Union{Nothing,Stri
         end
         r = findfirst(_TABLE_PROPS_RX, x)
     end
-    props = _set_attrs(x[r], Pair{String,Union{Nothing,String}}["table:display" => display ? "true" : "false",
-                                                                  "table:tab-color" => color, "tableooo:tab-color" => nothing])
+    changes = Pair{String,Union{Nothing,String}}["table:display" => display ? "true" : "false",
+                                                 "table:tab-color" => color, "tableooo:tab-color" => nothing]
+    rtl == br || push!(changes, "style:writing-mode" => rtl ? "rl-tb" : "lr-tb")   # only when it changes
+    props = _set_attrs(x[r], changes)
     x = x[1:prevind(x, first(r))] * props * x[nextind(x, last(r)):end]
     key(y) = _set_attrs(y, Pair{String,Union{Nothing,String}}["style:name" => ""])
     k = key(x)

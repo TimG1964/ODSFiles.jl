@@ -77,9 +77,11 @@ end
     @test getTabColor(xf["A"]) == "FFFF0000" && getTabColor(xf["B"]) == "FFFF0000" && getTabColor(xf["C"]) == "FFFFA500"
     @test_throws ODSError setTabColor(xf["A"], :accent2)          # theme colours: Excel's
     @test removeTabColor(xf["B"]) && !removeTabColor(xf["B"]) && getTabColor(xf["B"]) === nothing
-    r = readods(writeods(joinpath(mktempdir(), "v.ods"), xf))
-    @test [getSheetVisibility(r[i]) for i in 1:3] == [:hidden, :hidden, :visible]
-    @test [getTabColor(r[i]) for i in 1:3] == ["FFFF0000", nothing, "FFFFA500"]
+    for ext in ("ods", "fods")                                       # (a new flat file wrote no table styles until step 8)
+        r = readods(writeods(joinpath(mktempdir(), "v.$ext"), xf))
+        @test [getSheetVisibility(r[i]) for i in 1:3] == [:hidden, :hidden, :visible]
+        @test [getTabColor(r[i]) for i in 1:3] == ["FFFF0000", nothing, "FFFFA500"]
+    end
     @test_throws ODSError setSheetVisibility(readods(joinpath(VIS, "lo-vis.fods"))[1], :hidden)
     # the same properties share one derived style
     xf = newods("A"); addsheet!(xf, "B"); addsheet!(xf, "C")

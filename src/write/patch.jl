@@ -859,6 +859,20 @@ function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = tru
     if setnode !== nothing && _settings_edited(xf)
         sp = XML.sourcespan(setnode)
         push!(splices, (first(sp), last(sp), patched_settings(xf, String(SubString(src, first(sp), last(sp))))))
+    elseif setnode === nothing && xf.container.format === :fods && _views_edited(xf)
+        # view settings (phase 5 step 8) in a flat document without settings: after its meta
+        meta = get(kids, "office:meta", nothing)
+        at = meta === nothing ? first(rootspan) + _start_tag_end(SubString(src, first(rootspan), last(rootspan))) :
+                                last(XML.sourcespan(meta)) + 1
+        push!(splices, (at, at - 1, _settings_views(xf, "<office:settings></office:settings>")))
+    end
+    if _views_edited(xf) && xf.container.format === :fods
+        # LibreOffice reads view settings only with the config and ooo namespaces declared (F-053)
+        roottext = SubString(src, first(rootspan), first(rootspan) - 1 + _start_tag_end(SubString(src, first(rootspan), last(rootspan))))
+        ns = (occursin("xmlns:config=", roottext) ? "" : " xmlns:config=\"$_CONFIG_NS\"") *
+             (occursin("xmlns:ooo=", roottext) ? "" : " xmlns:ooo=\"$_OOO_NS\"")
+        e = first(rootspan) - 1 + _start_tag_end(roottext)
+        isempty(ns) || push!(splices, (e, e - 1, ns))
     end
     # typed and formatting styles (before the sheets are written, which add none)
     sx = added_styles_xml(xf.styles, used_styles(xf)) * _table_styles_xml(xf)     # table styles: phase 5 step 6

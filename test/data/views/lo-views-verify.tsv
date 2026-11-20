@@ -1,0 +1,36 @@
+odsf-a.ods	active=Freeze
+odsf-a.ods	Freeze	frozen=True	splitCol=1	splitRow=3	zoom=100	grid=True	headers=True	zeros=True	firstRow=2	firstCol=1	selection=$Freeze.$B$3	layout=0
+odsf-a.ods	FreezeRows	frozen=True	splitCol=0	splitRow=4	zoom=100	grid=True	headers=True	zeros=True	firstRow=3	firstCol=0	selection=$FreezeRows.$A$4	layout=0
+odsf-a.ods	Split	frozen=False	splitCol=1	splitRow=2	zoom=100	grid=True	headers=True	zeros=True	firstRow=3	firstCol=2	selection=$Split.$C$4	layout=0
+odsf-a.ods	Zoom	frozen=False	splitCol=0	splitRow=0	zoom=150	grid=True	headers=True	zeros=True	firstRow=0	firstCol=0	selection=$Zoom.$A$1	layout=0
+odsf-a.ods	Grid	frozen=False	splitCol=0	splitRow=0	zoom=100	grid=True	headers=True	zeros=True	firstRow=0	firstCol=0	selection=$Grid.$A$1	layout=0
+odsf-a.ods	Sel	frozen=False	splitCol=0	splitRow=0	zoom=100	grid=True	headers=True	zeros=True	firstRow=9	firstCol=2	selection=$Sel.$C$3	layout=0
+odsf-a.ods	RTL	frozen=False	splitCol=0	splitRow=0	zoom=100	grid=True	headers=True	zeros=True	firstRow=0	firstCol=0	selection=$RTL.$A$1	layout=1
+odsf-a.ods	Plain	frozen=False	splitCol=0	splitRow=0	zoom=100	grid=True	headers=True	zeros=True	firstRow=0	firstCol=0	selection=$Plain.$A$1	layout=0
+odsf-a.fods	active=Freeze
+odsf-a.fods	Freeze	frozen=True	splitCol=1	splitRow=3	zoom=100	grid=True	headers=True	zeros=True	firstRow=2	firstCol=1	selection=$Freeze.$B$3	layout=0
+odsf-a.fods	FreezeRows	frozen=True	splitCol=0	splitRow=4	zoom=100	grid=True	headers=True	zeros=True	firstRow=3	firstCol=0	selection=$FreezeRows.$A$4	layout=0
+odsf-a.fods	Split	frozen=False	splitCol=1	splitRow=2	zoom=100	grid=True	headers=True	zeros=True	firstRow=3	firstCol=2	selection=$Split.$C$4	layout=0
+odsf-a.fods	Zoom	frozen=False	splitCol=0	splitRow=0	zoom=150	grid=True	headers=True	zeros=True	firstRow=0	firstCol=0	selection=$Zoom.$A$1	layout=0
+odsf-a.fods	Grid	frozen=False	splitCol=0	splitRow=0	zoom=100	grid=True	headers=True	zeros=True	firstRow=0	firstCol=0	selection=$Grid.$A$1	layout=0
+odsf-a.fods	Sel	frozen=False	splitCol=0	splitRow=0	zoom=100	grid=True	headers=True	zeros=True	firstRow=9	firstCol=2	selection=$Sel.$C$3	layout=0
+odsf-a.fods	RTL	frozen=False	splitCol=0	splitRow=0	zoom=100	grid=True	headers=True	zeros=True	firstRow=0	firstCol=0	selection=$RTL.$A$1	layout=1
+odsf-a.fods	Plain	frozen=False	splitCol=0	splitRow=0	zoom=100	grid=True	headers=True	zeros=True	firstRow=0	firstCol=0	selection=$Plain.$A$1	layout=0
+odsf-b.ods	active=One
+odsf-b.ods	One	frozen=False	splitCol=0	splitRow=0	zoom=60	grid=True	headers=False	zeros=False	firstRow=0	firstCol=0	selection=$One.$A$1	layout=0
+odsf-b.ods	Two	frozen=False	splitCol=0	splitRow=0	zoom=60	grid=True	headers=False	zeros=False	firstRow=0	firstCol=0	selection=$Two.$A$1	layout=0
+odsf-p.fods	active=Sel
+odsf-p.fods	Freeze	frozen=False	splitCol=0	splitRow=0	zoom=60	grid=False	headers=False	zeros=False	firstRow=0	firstCol=0	selection=$Freeze.$A$1	layout=0
+odsf-p.fods	Split	frozen=False	splitCol=2	splitRow=6	zoom=60	grid=False	headers=False	zeros=False	firstRow=0	firstCol=0	selection=$Split.$A$1	layout=0
+odsf-p.fods	Zoom	frozen=False	splitCol=0	splitRow=0	zoom=75	grid=False	headers=False	zeros=False	firstRow=0	firstCol=0	selection=$Zoom.$A$1	layout=0
+odsf-p.fods	Flags	frozen=False	splitCol=0	splitRow=0	zoom=60	grid=False	headers=False	zeros=False	firstRow=0	firstCol=0	selection=$Flags.$A$1	layout=0
+odsf-p.fods	Sel	frozen=False	splitCol=0	splitRow=0	zoom=60	grid=False	headers=False	zeros=False	firstRow=9	firstCol=2	selection=$Sel.$B$2	layout=0
+odsf-p.fods	Break	frozen=False	splitCol=0	splitRow=0	zoom=60	grid=False	headers=False	zeros=False	firstRow=0	firstCol=0	selection=$Break.$A$1	layout=0
+odsf-p.fods	RTL	frozen=False	splitCol=0	splitRow=0	zoom=60	grid=False	headers=False	zeros=False	firstRow=0	firstCol=0	selection=$RTL.$A$1	layout=1
+odsf-p.fods	Plain	frozen=True	splitCol=3	splitRow=1	zoom=60	grid=False	headers=False	zeros=False	firstRow=1	firstCol=3	selection=$Plain.$D$2	layout=0
+odsf-c.ods	active=P171_51
+odsf-c.ods	P171_51	frozen=False	splitCol=1	splitRow=2	zoom=100	grid=True	headers=True	zeros=True	firstRow=0	firstCol=0	selection=$P171_51.$A$1	layout=0
+odsf-c.ods	P180_56	frozen=False	splitCol=1	splitRow=2	zoom=100	grid=True	headers=True	zeros=True	firstRow=0	firstCol=0	selection=$P180_56.$A$1	layout=0
+odsf-c.ods	P200_68	frozen=False	splitCol=1	splitRow=2	zoom=100	grid=True	headers=True	zeros=True	firstRow=0	firstCol=0	selection=$P200_68.$A$1	layout=0
+odsf-c.ods	P256_77	frozen=False	splitCol=2	splitRow=3	zoom=100	grid=True	headers=True	zeros=True	firstRow=0	firstCol=0	selection=$P256_77.$A$1	layout=0
+odsf-c.ods	P334_144	frozen=False	splitCol=2	splitRow=5	zoom=100	grid=True	headers=True	zeros=True	firstRow=0	firstCol=0	selection=$P334_144.$A$1	layout=0
