@@ -396,14 +396,14 @@ function _rewrite_model_refs!(xf::ODSFile, op::RefOp)
     return
 end
 
-function _rewrite_name(dn::DefinedName, op::RefOp)
+function _rewrite_name(dn::NameDef, op::RefOp)
     sheet = dn.base === nothing ? something(dn.scope, "") : something(_base_sheet(dn.base), something(dn.scope, ""))
     ctx = RefContext(sheet; names = true)
     rng = dn.range === nothing ? nothing : rewrite_rangelist(dn.range, op, ctx)
     expr = dn.expression === nothing ? nothing : rewrite_formula(dn.expression, op, ctx)
     base = dn.base === nothing ? nothing : _rewrite_base(dn.base, op)
     (rng === dn.range && expr === dn.expression && base === dn.base) && return dn
-    return DefinedName(dn.name, dn.scope, rng, expr, base)
+    return NameDef(dn.name, dn.scope, rng, expr, base, dn.span)
 end
 
 function _base_sheet(base::AbstractString)

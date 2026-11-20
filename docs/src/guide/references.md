@@ -48,6 +48,22 @@ sh["LocalRange"]          # a name local to the sheet
 ```
 
 A name whose expression is a constant gives that value. A name that is a formula can't be
-read: ODSFiles does not evaluate formulas.
+read: ODSFiles does not evaluate formulas. A name that refers to cells can be written through
+(`sh["LocalRange"] = 0`).
 
 Sheet and defined names match without regard to case, as in LibreOffice.
+
+Names are added, listed and deleted as in XLSX.jl:
+
+```julia
+addDefinedName(xf, "Prices", "Data.B2:B20")         # the file's
+addDefinedName(xf["Data"], "Rate", 0.2)             # the sheet's
+addDefinedName(xf, "Total", raw"=SUM($Data.$B$2:$B$20)")
+ODSFiles.getAllDefinedNames(xf)                     # every name, with its scope and value
+deleteDefinedName(xf, "Prices")
+```
+
+They follow LibreOffice's rules: a letter or `_` first, then letters, digits, `_` and `?`, and
+nothing it reads as a cell reference (`A1`, `R1C1`, `C1x`). In a name's formula, as in
+LibreOffice, a reference without `$` is relative, the sheet's name included: write
+`$Data.$B$2` to fix it. Saving an edited file changes only the names added or deleted.

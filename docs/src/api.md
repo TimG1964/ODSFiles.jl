@@ -97,6 +97,20 @@ copysheet!
 movesheet!
 ```
 
+## Defined names
+
+Named ranges and named expressions, the file's own and each sheet's. They follow LibreOffice's
+rules for names and are stored as LibreOffice stores them.
+
+```@docs
+addDefinedName
+deleteDefinedName
+deleteAllDefinedNames
+getDefinedNames
+getAllDefinedNames
+DefinedName
+```
+
 ## Formatting
 
 Fonts, fills, borders and alignment:

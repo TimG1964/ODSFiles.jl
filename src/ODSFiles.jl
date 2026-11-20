@@ -84,6 +84,7 @@ include("write/patch.jl")
 include("write/patchmap.jl")
 include("write/settings.jl")
 include("write/sheetops.jl")
+include("write/names.jl")
 include("write/save.jl")
 include("write/stream.jl")
 include("write/writetable.jl")
@@ -107,11 +108,13 @@ export
     setCellStyle, addCellStyle!,
     # sheets (phase 5)
     insertRows, insertColumns, deleteRows, deleteColumns,
-    renamesheet!, deletesheet!, copysheet!, movesheet!
+    renamesheet!, deletesheet!, copysheet!, movesheet!,
+    addDefinedName, deleteDefinedName, deleteAllDefinedNames
 
 @static if VERSION >= v"1.11"
     eval(Meta.parse("public getcell, getcellrange, getFormula, get_dimension, ODSError, Cell, EmptyCell, DataTable, TableRow, TableRowIterator, SheetRow, StreamWriter, StreamSheet, " *
-                    "getFont, getBorder, getFill, getAlignment, getFormat, getText, getDefaultFont, setOutsideBorder, CellFont, CellFill, CellBorder, CellAlignment, CellFormat, getColumnWidth, getRowHeight, getCellStyle"))
+                    "getFont, getBorder, getFill, getAlignment, getFormat, getText, getDefaultFont, setOutsideBorder, CellFont, CellFill, CellBorder, CellAlignment, CellFormat, getColumnWidth, getRowHeight, getCellStyle, " *
+                    "getDefinedNames, getAllDefinedNames, DefinedName"))
 end
 
 include("precompile.jl")

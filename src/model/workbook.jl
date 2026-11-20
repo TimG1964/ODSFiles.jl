@@ -7,19 +7,32 @@
 # replace the OOXML parts; only mode "r" is available in phase 1 (D-019).
 
 """
-    DefinedName
+    NameDef
 
-A named range (`table:named-range`) or named expression (`table:named-expression`).
+A named range (`table:named-range`) or named expression (`table:named-expression`), as stored.
 `scope` is the sheet a local name belongs to, or `nothing` for a workbook name.
 `range` is the `table:cell-range-address`, `expression` the `table:expression`.
+`span`: where its element is in the text it was read from (empty for a name ODSFiles added),
+so that a save deletes it there and keeps every other name as it is (phase 5).
+The public view of a name is [`DefinedName`](@ref).
 """
-struct DefinedName
+struct NameDef
     name::String
     scope::Union{Nothing,String}
     range::Union{Nothing,String}
     expression::Union{Nothing,String}
     base::Union{Nothing,String}
+    span::UnitRange{Int}
 end
+NameDef(name, scope, range, expression, base) = NameDef(name, scope, range, expression, base, 0:-1)
+
+# The names deleted since the file was read (their elements' spans), and where the names'
+# element is (`at`), or, when `at` is empty, where one would go (`first(at)`) (phase 5).
+mutable struct NameEdits
+    removed::Vector{UnitRange{Int}}
+    at::UnitRange{Int}
+end
+NameEdits() = NameEdits(UnitRange{Int}[], 0:-1)
 
 """
     Worksheet
@@ -34,7 +47,7 @@ mutable struct Worksheet
     entry::Union{Nothing,SheetEntry{String}}   # nothing: a sheet made by ODSFiles
     visible::Bool
     store::Union{Nothing,SheetStore}
-    localnames::Union{Nothing,Vector{DefinedName}}
+    localnames::Union{Nothing,Vector{NameDef}}
     lock::ReentrantLock
     dirty::Dict{Int,Vector{Int}}      # edited cells of a sheet read from a file: row → columns
     formats::Union{Nothing,SheetFormats}   # read on first use by formatting (phase 4)
@@ -42,10 +55,12 @@ mutable struct Worksheet
     colmap::Union{Nothing,IndexMap}   #   (phase 5: original → current lines), or nothing
     opstart::Int                      # operations already in its text (a copy's: those before the copy)
     copied::Bool                      # a copy made by `copysheet!`: its text is its own, not the file's
+    nameedits::NameEdits              # its local names deleted, and where they are (phase 5)
 end
 
 Worksheet(xf, name, index, entry, visible, store, localnames, lock) =
-    Worksheet(xf, name, index, entry, visible, store, localnames, lock, Dict{Int,Vector{Int}}(), nothing, nothing, nothing, 0, false)
+    Worksheet(xf, name, index, entry, visible, store, localnames, lock, Dict{Int,Vector{Int}}(), nothing, nothing, nothing, 0, false,
+              NameEdits())
 
 # Whether the sheet was made by ODSFiles (so it is written whole), not read from the file.
 isnewsheet(ws::Worksheet) = ws.entry === nothing
@@ -64,7 +79,7 @@ mutable struct ODSFile
     version::Union{Nothing,String}    # office:version
     styles::StyleIndex
     sheets::Vector{Worksheet}
-    names::Vector{DefinedName}
+    names::Vector{NameDef}
     null_date::Dates.Date             # table:null-date, for day numbers (formulas, formats)
     use_cache::Bool
     writable::Bool                    # opened with mode "w" or "rw", or made by newods
@@ -75,14 +90,15 @@ mutable struct ODSFile
     gone::Vector{Any}                 # sheets read from the file and deleted since (phase 5)
     extras::Vector{Any}               # database ranges added by sheet copies: (XML, operations already applied)
     objcopies::Vector{Pair{String,String}}   # embedded objects duplicated by sheet copies ("Object 1" => "Object 3")
+    nameedits::NameEdits              # workbook names deleted, and where they are (phase 5)
 end
 
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, false, nothing,
-            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[])
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits())
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io,
-            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[])
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits())
 
 #
 # The sheet index is built as far as it is needed: `xf["Sheet1"]` or `xf[1]` finds the first
@@ -104,6 +120,7 @@ function _index_next!(xf::ODSFile)
                 return true
             elseif kind === :names
                 append!(xf.names, _read_names(node, nothing))
+                xf.nameedits.at = XML.sourcespan(node)
             else
                 xf.null_date = _null_date(node)
             end
@@ -230,7 +247,7 @@ function _open_bytes(bytes::Vector{UInt8}, name::String, enable_cache::Bool;
     content === nothing && throw(ODSError("$name has no content.xml."))
     styles_xml = container.flat === nothing ? read_xml(container, :styles) : nothing
     styles = build_style_index(styles_xml, content)
-    xf = ODSFile(name, container, content, odf_version(content), styles, Worksheet[], DefinedName[],
+    xf = ODSFile(name, container, content, odf_version(content), styles, Worksheet[], NameDef[],
                  SheetCore.DEFAULT_NULL_DATE, enable_cache)
     xf.scanner = BodyScanner(content)
     return xf
@@ -267,7 +284,7 @@ end
 
 # The names in a table:named-expressions element.
 function _read_names(node::XML.LazyNode{String}, scope::Union{Nothing,String})
-    names = DefinedName[]
+    names = NameDef[]
     c = XML.Cursor(node)
     XML.next!(c)
     XML.for_each_child!(c) do ch
@@ -275,34 +292,54 @@ function _read_names(node::XML.LazyNode{String}, scope::Union{Nothing,String})
         t = XML.tag(ch)
         if t == "table:named-range" || t == "table:named-expression"
             name = ""; rng = nothing; expr = nothing; base = nothing
+            sp = XML.sourcespan(XML.LazyNode(ch))
             for (k, v) in XML.eachattribute!(ch)
                 k == "table:name" && (name = String(v))
                 k == "table:cell-range-address" && (rng = String(v))
                 k == "table:expression" && (expr = String(v))
                 k == "table:base-cell-address" && (base = String(v))
             end
-            isempty(name) || push!(names, DefinedName(name, scope, rng, expr, base))
+            isempty(name) || push!(names, NameDef(name, scope, rng, expr, base, sp))
         end
         XML.skip_element!(ch)
     end
     return names
 end
 
-# The sheet's own names (inside its table:table), read on first use.
+# The elements that come after a table's names (ODF 1.3 and LibreOffice's extensions).
+const _AFTER_NAMES = ("table:database-ranges", "table:data-pilot-tables", "table:consolidation", "table:dde-links",
+                      "calcext:conditional-formats", "calcext:sparkline-groups", "loext:sparkline-groups",
+                      "office:event-listeners", "table:named-expressions")
+
+# The sheet's own names (inside its table:table), read on first use. Where they are is noted
+# too, or, if it has none, where they would go: before the first element that follows them, or
+# the table's end tag (only those few elements' spans are taken: the rows are skipped).
 function _local_names(ws::Worksheet)
     lock(ws.lock) do
         ws.localnames === nothing || return ws.localnames
-        found = DefinedName[]
+        found = NameDef[]
         ws.entry === nothing && (ws.localnames = found; return found)
         c = XML.Cursor(ws.entry.node)
         XML.next!(c)
+        span = 0:-1
+        at = 0
         XML.for_each_child!(c) do ch
             XML.nodetype(ch) === XML.Element || return
-            if XML.tag(ch) == "table:named-expressions"
-                append!(found, _read_names(XML.LazyNode(ch), ws.name))
+            tg = XML.tag(ch)
+            if tg == "table:named-expressions"
+                ln = XML.LazyNode(ch)
+                span = XML.sourcespan(ln)
+                append!(found, _read_names(ln, ws.name))
+            elseif at == 0 && tg in _AFTER_NAMES
+                at = first(XML.sourcespan(XML.LazyNode(ch)))
             end
             XML.skip_element!(ch)
         end
+        if isempty(span) && at == 0
+            src = parent(XML.sourcetext(ws.entry.node))
+            at = findprev('<', src, last(XML.sourcespan(ws.entry.node)))     # `</table:table>`
+        end
+        ws.nameedits.at = isempty(span) ? (at:at-1) : span
         ws.localnames = found
         return found
     end
@@ -411,7 +448,7 @@ isvisible(ws::Worksheet) = ws.visible
 #
 
 # The name `name` in `names`, matched without regard to case (as LibreOffice does).
-function _find_name(names::Vector{DefinedName}, name::AbstractString)
+function _find_name(names::Vector{NameDef}, name::AbstractString)
     for dn in names
         dn.name == name && return dn
     end
@@ -424,42 +461,21 @@ end
 is_workbook_defined_name(xf::ODSFile, name::AbstractString) = _find_name(_wb_names(xf), name) !== nothing
 is_worksheet_defined_name(ws::Worksheet, name::AbstractString) = _find_name(_local_names(ws), name) !== nothing
 
-# A space-separated table:cell-range-address list as a reference string: `~` between areas.
-_address_list(s::AbstractString) = join(SheetCore._split_unquoted(strip(s), (' ',)) |> v -> filter(!isempty, v), "~")
-
 """
-    get_defined_name_value(dn::DefinedName)
+    get_defined_name_value(dn::NameDef)
 
 The value of a defined name: a sheet-qualified reference (`SheetCellRef`, `SheetCellRange`,
 ...) for a named range or a named expression that is a single reference, or the constant of
 a named expression that is a number, string or logical value. Other expressions throw: they
-would need a formula evaluator.
+would need a formula evaluator. A reference without a sheet (a relative name's `.B2`) is on its
+base cell's sheet. LibreOffice saves a named range of several areas as an expression of
+references joined by `~`, `;` or spaces (F-026, F-050).
 """
-function get_defined_name_value(dn::DefinedName)
-    if dn.range !== nothing
-        return parse_sheet_ref(_address_list(dn.range))
-    end
-    expr = something(dn.expression, "")
-    body = _strip_formula_prefix(expr)
-    startswith(body, '=') && (body = body[2:end])
-    body = strip(body)
-    # One or more bracketed references, separated by spaces or `~`: LibreOffice saves a
-    # named range of several areas so (F-026).
-    toks = tokenize_formula(body)
-    if !isempty(toks) && all(t -> t.kind in (FT_REF, FT_SPACE) || (t.kind === FT_OP && t.text == "~"), toks) &&
-       any(t -> t.kind === FT_REF, toks)
-        areas = [String(t.text[2:end-1]) for t in toks if t.kind === FT_REF]
-        return parse_sheet_ref(join(areas, "~"))
-    end
-    _is_intlike(body) && return parse(Int64, body)
-    x = tryparse(Float64, body)
-    x === nothing || return x
-    if length(body) >= 2 && startswith(body, '"') && endswith(body, '"')
-        return replace(body[2:end-1], "\"\"" => "\"")
-    end
-    uppercase(body) in ("TRUE()", "TRUE") && return true
-    uppercase(body) in ("FALSE()", "FALSE") && return false
-    throw(ODSError("The defined name `$(dn.name)` is the expression `$expr`, which ODSFiles cannot evaluate."))
+function get_defined_name_value(dn::NameDef)
+    v, _, isformula = _name_value(dn)      # src/write/names.jl
+    isformula && throw(ODSError("The defined name `$(dn.name)` is the expression `$(something(dn.expression, dn.range))`, " *
+                                "which ODSFiles cannot evaluate."))
+    return v
 end
 get_defined_name_value(xf::ODSFile, name::AbstractString) = get_defined_name_value(_find_name(_wb_names(xf), name))
 get_defined_name_value(ws::Worksheet, name::AbstractString) = get_defined_name_value(_find_name(_local_names(ws), name))
@@ -467,8 +483,8 @@ get_defined_name_value(ws::Worksheet, name::AbstractString) = get_defined_name_v
 is_defined_name_value_a_reference(v) = v isa Union{SheetCellRef,SheetCellRange,SheetColumnRange,SheetRowRange,NonContiguousRange}
 
 """
-    defined_names(xf::ODSFile) -> Vector{DefinedName}
-    defined_names(ws::Worksheet) -> Vector{DefinedName}
+    defined_names(xf::ODSFile) -> Vector{NameDef}
+    defined_names(ws::Worksheet) -> Vector{NameDef}
 
 The workbook's named ranges and expressions, or those local to a sheet.
 """

@@ -490,5 +490,7 @@ function write_table(io::IO, ws::Worksheet; display::Bool = true)
         write_columns(io, f.cols, styles, 1, ncols)
         write_model_rows(io, s, f, styles, 1; display) == 1 && print(io, _EMPTY_ROW)
     end
+    ln = ws.localnames                             # its names (phase 5)
+    (ln === nothing || isempty(ln)) || print(io, "<table:named-expressions>", _names_xml(ln), "</table:named-expressions>")
     print(io, "</table:table>")
 end

@@ -53,6 +53,13 @@ The formatting functions work as in XLSX.jl too, with the differences listed in
 - **Sheet operations** ([`renamesheet!`](@ref), [`deletesheet!`](@ref), [`copysheet!`](@ref),
   [`movesheet!`](@ref)) take XLSX.jl's arguments and behave as LibreOffice does; a copy repoints only
   references whose sheet name is relative, and a name already in use is an error.
+- **Defined names** ([`addDefinedName`](@ref), [`deleteDefinedName`](@ref),
+  [`deleteAllDefinedNames`](@ref), [`getDefinedNames`](@ref), [`getAllDefinedNames`](@ref)) take
+  XLSX.jl's arguments, with LibreOffice's rules: a name may hold `?` but not `\`, and names such
+  as `C1x` that LibreOffice reads as references are refused. A sheet's name may refer to another
+  sheet, whole columns and rows can be named, and `Bool` constants stay `Bool`. A formula's
+  sheet names without `$` are relative, as in LibreOffice. ODF has no system names, so `force` and
+  `include_system` change nothing.
 - **Not yet available:**
   Excel-style tables, conditional formats, comments, images and charts, and `writetable`'s
   `as_table` and `freeze_header`.

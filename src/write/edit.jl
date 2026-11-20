@@ -19,7 +19,7 @@ A new, empty spreadsheet with one sheet (`Sheet1`, or `sheetname`), open for wri
 Write it with [`writeods`](@ref).
 """
 function newods(sheetname::AbstractString = "")
-    xf = ODSFile("blank.ods", nothing, "", DEFAULT_ODF_VERSION, StyleIndex(), Worksheet[], DefinedName[],
+    xf = ODSFile("blank.ods", nothing, "", DEFAULT_ODF_VERSION, StyleIndex(), Worksheet[], NameDef[],
                  SheetCore.DEFAULT_NULL_DATE, true, true, nothing)
     addsheet!(xf, isempty(sheetname) ? "Sheet1" : sheetname)
     return xf
@@ -106,7 +106,7 @@ Write `value` into a cell, or into every cell of a range. The file must be writa
 - A vector fills a row (`dim=2`, the default) or a column (`dim=1`) from a cell, or a
   one-row or one-column range.
 - `ref` takes the forms of [`getdata`](@ref): `"B2"`, `"B2:D4"`, `"Sheet1.B2"`, `"Sheet1!B2"`,
-  integers and ranges.
+  integers and ranges, or a defined name that refers to cells on the sheet.
 - With `:` for the rows or columns, as in XLSX.jl: `ws[3, :] = [1, 2, 3]` writes a vector
   along row 3 from column A, and `ws[:, 2] = v` down column B from row 1. Any other value
   fills the cells addressed, where `:` stands for the sheet's used columns or rows
@@ -189,9 +189,17 @@ function setdata!(ws::Worksheet, ref::AbstractString, value)
         parse_sheet_ref(ref)
     catch e
         e isa ODSError || rethrow()
-        throw(ODSError("`$ref` is not a cell or cell range to write to."))
+        nothing
     end
-    return setdata!(ws, typed, value)
+    typed === nothing || return setdata!(ws, typed, value)
+    # a defined name, the sheet's or the file's, that refers to cells (phase 5); a name can't read
+    # as a reference, so references are tried first: they need no names read
+    dn = something(_find_name(_local_names(ws), ref), _find_name(_wb_names(get_odsfile(ws)), ref), Some(nothing))
+    dn === nothing && throw(ODSError("`$ref` is not a cell or cell range to write to."))
+    v, _, isformula = _name_value(dn)
+    (isformula || !is_defined_name_value_a_reference(v)) &&
+        throw(ODSError("The defined name `$ref` is not a cell or cell range to write to."))
+    return setdata!(ws, v, value)
 end
 setdata!(ws::Worksheet, ref::AbstractString, value::AbstractVector, dim::Integer) =
     setdata!(ws, CellRef(something(_plain_ref(ref), ref)), value, dim)

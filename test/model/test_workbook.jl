@@ -157,10 +157,10 @@ end
     @test sort([n.name for n in names]) == ["answer", "greeting", "listnm", "myrange", "onecell"]
     @test [n.name for n in defined_names(xf["Names"])] == ["localr"]
     @test defined_names(xf["Names"])[1].scope == "Names"
-    @test_throws ODSError ODSFiles.get_defined_name_value(ODSFiles.DefinedName("e", nothing, nothing, "of:=1+[.A1]", nothing))
-    @test ODSFiles.get_defined_name_value(ODSFiles.DefinedName("e", nothing, nothing, "of:=TRUE()", nothing)) === true
-    @test ODSFiles.get_defined_name_value(ODSFiles.DefinedName("e", nothing, nothing, "2.5", nothing)) === 2.5
-    @test ODSFiles.get_defined_name_value(ODSFiles.DefinedName("e", nothing, nothing, "of:=[\$S.\$A\$1]~[\$S.\$B\$2]", nothing)) isa ODSFiles.NonContiguousRange
+    @test_throws ODSError ODSFiles.get_defined_name_value(ODSFiles.NameDef("e", nothing, nothing, "of:=1+[.A1]", nothing))
+    @test ODSFiles.get_defined_name_value(ODSFiles.NameDef("e", nothing, nothing, "of:=TRUE()", nothing)) === true
+    @test ODSFiles.get_defined_name_value(ODSFiles.NameDef("e", nothing, nothing, "2.5", nothing)) === 2.5
+    @test ODSFiles.get_defined_name_value(ODSFiles.NameDef("e", nothing, nothing, "of:=[\$S.\$A\$1]~[\$S.\$B\$2]", nothing)) isa ODSFiles.NonContiguousRange
 end
 
 @testset "merged cells" begin

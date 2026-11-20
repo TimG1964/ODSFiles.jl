@@ -593,7 +593,13 @@ function write_patched_table(out::_ChunkedIO, ws::Worksheet; display::Bool = tru
     else
         _walk!(st, node, :table)
     end
-    _copy_to!(st, nextind(src, last(sp)))      # the rest of the table, verbatim
+    # the rest of the table, verbatim, with its names' edits (they follow the rows; phase 5)
+    for (a, b, rep) in _name_splices(ws.localnames, ws.nameedits, src)
+        _copy_to!(st, a)
+        print(out, rep)
+        b >= a && (st.pos = max(st.pos, nextind(src, b)))
+    end
+    _copy_to!(st, nextind(src, last(sp)))
     return nothing
 end
 
@@ -657,7 +663,15 @@ function _write_sheet(out::_ChunkedIO, ws::Worksheet, rw::Union{Nothing,RefRewri
     a = first(sp); b = last(sp)
     e = a - 1 + _start_tag_end(SubString(src, a, b))
     print(out, _table_start_tag(ws, srw, src, a, e))
-    srw === nothing ? print(out, SubString(src, e + 1, b)) : rewrite_xml(out, srw, src, e + 1, b; sheet = ws.entry.name)
+    put(x, y) = x > y ? nothing : srw === nothing ? print(out, SubString(src, x, y)) :
+                                   rewrite_xml(out, srw, src, x, y; sheet = ws.entry.name)
+    pos = e + 1
+    for (x, y, rep) in _name_splices(ws.localnames, ws.nameedits, src)    # its names' edits (phase 5)
+        put(pos, prevind(src, x))
+        print(out, rep)
+        pos = y >= x ? nextind(src, y) : max(pos, x)
+    end
+    put(pos, b)
     return
 end
 
@@ -797,7 +811,7 @@ function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = tru
         # edited sheets (and, after structural edits, every other sheet: its references are rewritten)
         for ws in orig
             sp = spans[ws]
-            (_has_edits(ws) || rw !== nothing || ws.name != ws.entry.name) &&
+            (_has_edits(ws) || rw !== nothing || ws.name != ws.entry.name || _names_edited(ws)) &&
                 push!(splices, (first(sp), last(sp), io -> _write_sheet(io, ws, rw; display)))
         end
         # new sheets (and copies), after the last one
@@ -806,6 +820,16 @@ function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = tru
             at = last_table_end > 0 ? nextind(src, last_table_end) : _spreadsheet_end(body, src)
             push!(splices, (at, at - 1, io -> foreach(ws -> _write_sheet(io, ws, rw; display), newsheets)))
         end
+    end
+    # the workbook's names (phase 5): deleted ones removed, added ones written, in a new element after
+    # the tables if there is none
+    if _names_edited(xf)
+        ed = xf.nameedits
+        if isempty(ed.at)
+            at = last_table_end > 0 ? nextind(src, last_table_end) : _spreadsheet_end(body, src)
+            ed = NameEdits(ed.removed, at:at-1)
+        end
+        append!(splices, _name_splices(xf.names, ed, src))
     end
     # database ranges added by copies (phase 5), through the operations after each copy
     if !isempty(xf.extras)

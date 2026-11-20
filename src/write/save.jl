@@ -22,6 +22,7 @@ end
 function _write_body(io::IO, xf::ODSFile; display::Bool = true)
     print(io, "<office:body><office:spreadsheet>")
     foreach(ws -> write_table(io, ws; display), xf.sheets)
+    isempty(xf.names) || print(io, "<table:named-expressions>", _names_xml(xf.names), "</table:named-expressions>")
     print(io, "</office:spreadsheet></office:body>")
     return nothing
 end

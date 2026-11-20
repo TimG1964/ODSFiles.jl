@@ -1,0 +1,92 @@
+Abc	global	ok
+_x	global	ok
+x.y	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x_y	global	ok
+\x	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x\y	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+1a	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+a1x	global	ok
+A1	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+XFD1	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+XFE1	global	ok
+R1C1	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+RC	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+R	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+C	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+a b	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+tést	global	ok
+x?	global	ok
+x-y	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x$	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+TRUE	global	ok
+SUM	global	ok
+abc	global	refused: .
+A1B	global	ok
+Ab.1	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+réel	global	ok
+.x	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x.	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x..y	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+?x	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x!	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x#	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x%	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x'	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x&	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x@	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x~	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x;	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x,	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x(	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x+	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x*	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x/	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x=	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x<	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x[	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x{	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x^	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x|	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x`	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x:	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+c1x	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+R1	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+r2c	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+Rx	global	ok
+cx	global	ok
+C1	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+ABC1	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+AAAA1	global	ok
+Sheet1	global	ok
+_1	global	ok
+x 	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+x·	global	refused: Invalid name. It must start with a letter (excluding c, C, r, or R followed by a number) or underscore.
+αβ	global	ok
+Ā1	global	ok
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	global	ok
+RC1	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+RCx	global	ok
+rc	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+CR	global	ok
+CR1	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+A1048577	global	ok
+A0	global	ok
+XFD1048576	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+XFD1048577	global	ok
+Ax1	global	refused: Invalid name. Reference to a cell, or a range of cells not allowed.
+Rr	global	ok
+R_1	global	ok
+C_	global	ok
+x²	global	ok
+x٣	global	ok
+中	global	ok
+Abc	local	ok
+ABC	global	refused: .
+multi	global	ok
+multi2	global	ok
+rel	global	ok
+num	global	ok
+txt	global	ok
+frm	global	ok
+fx_a	global	ok
+rl_a	global	ok

@@ -52,7 +52,7 @@ function renamesheet!(ws::Worksheet, name::AbstractString)
     op = SheetRename(ws.name, name)
     _rewrite_model_refs!(xf, op)
     ws.localnames === nothing ||
-        (ws.localnames = [DefinedName(dn.name, name, dn.range, dn.expression, dn.base) for dn in ws.localnames])
+        (ws.localnames = [NameDef(dn.name, name, dn.range, dn.expression, dn.base, dn.span) for dn in ws.localnames])
     ws.name = name
     isnewfile(xf) || push!(xf.ops, op)
     return nothing
@@ -147,7 +147,7 @@ function _names_to_localize(xf::ODSFile, ws::Worksheet)
         end
     end
     locals = Set(lowercase(dn.name) for dn in _local_names(ws))
-    out = DefinedName[]
+    out = NameDef[]
     for dn in _wb_names(xf)
         k = lowercase(dn.name)
         (k in used && !(k in locals)) || continue
@@ -167,7 +167,7 @@ function _names_to_localize(xf::ODSFile, ws::Worksheet)
     return out
 end
 
-function _name_xml(dn::DefinedName)
+function _name_xml(dn::NameDef)
     io = IOBuffer()
     print(io, dn.range === nothing ? "<table:named-expression" : "<table:named-range", " table:name=\"")
     _escape_attr(io, dn.name); print(io, '"')
@@ -324,7 +324,7 @@ function copysheet!(ws::Worksheet, name::AbstractString = "")
                                  rewrite_formula(d.formula, op, RefContext(name)), d.colspan, d.rowspan))
         end
         all = SheetCopy(ws.name, name, true, order)
-        new.localnames = [DefinedName(dn.name, name, dn.range === nothing ? nothing : rewrite_rangelist(dn.range, all, RefContext(name)),
+        new.localnames = [NameDef(dn.name, name, dn.range === nothing ? nothing : rewrite_rangelist(dn.range, all, RefContext(name)),
                                       dn.expression === nothing ? nothing : rewrite_formula(dn.expression, all, RefContext(name)),
                                       dn.base === nothing ? nothing : _rewrite_base(dn.base, all))
                           for dn in vcat(_local_names(ws), localize)]
@@ -340,7 +340,7 @@ function copysheet!(ws::Worksheet, name::AbstractString = "")
         # the local names point at the copy (absolute sheet names too), and the localized global names join them
         all = SheetCopy(ws.name, name, true, order)
         span, at = _local_names_span(t)
-        extra = join(_name_xml(DefinedName(dn.name, name, dn.range, dn.expression, dn.base)) for dn in localize)
+        extra = join(_name_xml(NameDef(dn.name, name, dn.range, dn.expression, dn.base)) for dn in localize)
         if span !== nothing
             seg = t[first(span):last(span)]
             io = IOBuffer(); rewrite_xml(io, RefRewriter(Any[all], seg; withcopy = true), seg, 1, ncodeunits(seg); sheet = name)
