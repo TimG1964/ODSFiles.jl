@@ -119,6 +119,21 @@ end
 
 # `runs` with the style of the cells in c1:c2 mapped by `m`.
 function _restyle_runs!(runs::Vector{CellRun}, c1::Int, c2::Int, m)
+    # in place when no run straddles c1 or c2 (the usual case): no new vector
+    straddles = false
+    for r in runs
+        a = Int(r.col); b = _lastcol(r)
+        (a < c1 <= b || a <= c2 < b) && (straddles = true; break)
+    end
+    if !straddles
+        @inbounds for i in eachindex(runs)
+            r = runs[i]
+            (r.col < c1 || r.col > c2) && continue
+            s = m(r.data.style)
+            s == r.data.style || (runs[i] = CellRun(r.col, r.count, _with_style(r.data, s)))
+        end
+        return runs
+    end
     out = CellRun[]
     for r in runs
         a = Int(r.col); b = _lastcol(r)
@@ -134,6 +149,18 @@ function _restyle_runs!(runs::Vector{CellRun}, c1::Int, c2::Int, m)
     empty!(runs)
     append!(runs, out)
     return runs
+end
+
+# Whether the runs (in column order) hold every column of c1:c2.
+function _covers(runs::Vector{CellRun}, c1::Int, c2::Int)
+    next = c1
+    for r in runs
+        _lastcol(r) < next && continue
+        r.col > next && return false
+        next = _lastcol(r) + 1
+        next > c2 && return true
+    end
+    return false
 end
 
 # Adds to `bps` the starts and ends (+1) of the runs in a:b.
@@ -168,6 +195,8 @@ _segment_points(bps::Vector{Int}, a::Int, b::Int) = unique!(sort!(filter!(x -> a
 # with every cell of c1:c2 that holds no value (`vals`) given the style `m(effective style)`.
 function _restyled_empty_runs(ex::Vector{CellRun}, vals::Vector{CellRun}, c1::Int, c2::Int, f::SheetFormats,
                               rf::Union{Nothing,RowFormat}, m)
+    # a row whose values fill c1:c2 and that has no formatted empty cells: nothing to do
+    isempty(ex) && _covers(vals, c1, c2) && return _NO_RUNS
     out = CellRun[]
     for r in ex                                   # before c1
         r.col < c1 && _push_run!(out, CellRun(r.col, min(_lastcol(r), c1 - 1) - r.col + 1, r.data))

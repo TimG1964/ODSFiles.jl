@@ -19,12 +19,11 @@ function _meta_body()
     return "<office:meta><meta:generator>$(_generator())</meta:generator><meta:creation-date>$now</meta:creation-date></office:meta>"
 end
 
-function _body(xf::ODSFile; display::Bool = true)
-    io = IOBuffer()
+function _write_body(io::IO, xf::ODSFile; display::Bool = true)
     print(io, "<office:body><office:spreadsheet>")
     foreach(ws -> write_table(io, ws; display), xf.sheets)
     print(io, "</office:spreadsheet></office:body>")
-    return String(take!(io))
+    return nothing
 end
 
 const _XMLDECL = """<?xml version="1.0" encoding="UTF-8"?>\n"""
@@ -36,12 +35,15 @@ function _faces(xf::ODSFile)
     return isempty(fx) ? (lx, "") : (" xmlns:svg=\"$_SVG_NS\"" * lx, "<office:font-face-decls>$fx</office:font-face-decls>")
 end
 
-function new_content_xml(xf::ODSFile, version; display::Bool = true)
-    body = _body(xf; display)            # first: writing may add styles
+# A new file's content.xml, written to `io` as it is made (D-048). The styles come first:
+# writing the sheets adds none (styles are added when cells are set or formatted).
+function write_new_content(io::IO, xf::ODSFile, version; display::Bool = true)
     svg, faces = _faces(xf)
-    return string(_XMLDECL, "<office:document-content", _NS_DECL, svg, " office:version=\"", version, "\">",
-                  faces, "<office:automatic-styles>", added_styles_xml(xf.styles, used_styles(xf)), "</office:automatic-styles>",
-                  body, "</office:document-content>")
+    print(io, _XMLDECL, "<office:document-content", _NS_DECL, svg, " office:version=\"", version, "\">",
+          faces, "<office:automatic-styles>", added_styles_xml(xf.styles, used_styles(xf)), "</office:automatic-styles>")
+    _write_body(io, xf; display)
+    print(io, "</office:document-content>")
+    return nothing
 end
 
 # (`named`: more named styles for office:styles, as a streamed file's column formats (D-042)
@@ -101,12 +103,13 @@ end
 new_meta_xml(version) =
     string(_XMLDECL, "<office:document-meta", _NS_DECL, " office:version=\"", version, "\">", _meta_body(), "</office:document-meta>")
 
-function new_flat_xml(xf::ODSFile, version, mediatype; display::Bool = true)
-    body = _body(xf; display)
+function write_new_flat(io::IO, xf::ODSFile, version, mediatype; display::Bool = true)
     svg, faces = _faces(xf)
-    return string(_XMLDECL, "<office:document", _NS_DECL, svg, " office:version=\"", version, "\" office:mimetype=\"", mediatype, "\">",
-                  _meta_body(), faces, replace(_STYLES_BODY, "</office:styles>" => named_styles_xml(xf.styles) * "</office:styles>"), "<office:automatic-styles>", added_styles_xml(xf.styles, used_styles(xf)), "</office:automatic-styles>",
-                  body, "</office:document>")
+    print(io, _XMLDECL, "<office:document", _NS_DECL, svg, " office:version=\"", version, "\" office:mimetype=\"", mediatype, "\">",
+          _meta_body(), faces, replace(_STYLES_BODY, "</office:styles>" => named_styles_xml(xf.styles) * "</office:styles>"), "<office:automatic-styles>", added_styles_xml(xf.styles, used_styles(xf)), "</office:automatic-styles>")
+    _write_body(io, xf; display)
+    print(io, "</office:document>")
+    return nothing
 end
 
 # :ods, :ots or :fods, for a destination.
@@ -131,7 +134,7 @@ end
 function _patched_parts(xf::ODSFile; display::Bool = true)
     cont = xf.container
     mts = Dict(e.path => e.mediatype for e in cont.manifest)
-    content = patched_content(xf; display)
+    content = io -> write_patched_content(io, xf; display)     # written into the zip as it is made (D-048)
     parts = PackagePart[]
     for name in partnames(cont)
         name in _RESERVED_PARTS && continue
@@ -178,9 +181,9 @@ function writeods(dest::Union{AbstractString,IO}, xf::ODSFile; overwrite::Bool =
     if isnewfile(xf)
         _check_version(version)
         if fmt === :fods
-            write_flat(dest, new_flat_xml(xf, version, mt; display))
+            write_flat(dest, io -> write_new_flat(io, xf, version, mt; display))
         else
-            parts = [PackagePart("content.xml", new_content_xml(xf, version; display)),
+            parts = [PackagePart("content.xml", io -> write_new_content(io, xf, version; display)),
                      PackagePart("styles.xml", _new_styles(xf, version)),
                      PackagePart("meta.xml", new_meta_xml(version))]
             write_package(dest, parts; mediatype = mt, version)
@@ -190,7 +193,7 @@ function writeods(dest::Union{AbstractString,IO}, xf::ODSFile; overwrite::Bool =
         wasflat == (fmt === :fods) ||
             throw(ODSError("Can't write a file read as $(wasflat ? "flat XML (.fods)" : "a zipped package") as $(wasflat ? "a zipped package" : "flat XML (.fods)") yet."))
         if fmt === :fods
-            write_flat(dest, patched_content(xf; display))
+            write_flat(dest, io -> write_patched_content(io, xf; display))
         else
             v = xf.version in WRITABLE_ODF_VERSIONS ? xf.version : DEFAULT_ODF_VERSION
             write_package(dest, _patched_parts(xf; display); mediatype = mt, version = v)

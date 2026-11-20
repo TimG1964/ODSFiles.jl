@@ -125,6 +125,43 @@ end
     @test_throws ODSError ws[1, 1] = [1, 2]
 end
 
+@testset "whole rows and columns with `:`, as XLSX.jl" begin
+    # a vector: along the row from column A, down the column from row 1
+    ws = newods()[1]
+    ws[2, :] = [1, "two", 3.5]
+    @test isequal(ws["A2:C2"], Any[1 "two" 3.5]) && ismissing(ws["A1"])
+    ws[:, 5] = [10, 20]
+    @test ws["E1:E2"] == reshape([10, 20], 2, 1)
+    setdata!(ws, 4, :, [true, false]); setdata!(ws, :, 6, [7])
+    @test ws["A4:B4"] == [true false] && ws["F1"] == 7
+    # any other value fills the used columns or rows (A1:F4 here)
+    @test get_dimension(ws) == SheetCore.CellRange("A1:F4")
+    ws[3, :] = 0
+    @test ws["A3:F3"] == zeros(Int, 1, 6) && ismissing(ws["G3"])
+    ws[:, 2] = "b"
+    @test all(==("b"), ws["B1:B4"]) && ismissing(ws["B5"])
+    ws[[1, 4], :] = -1
+    @test all(==(-1), ws["A1:F1"]) && all(==(-1), ws["A4:F4"])
+    ws[:, 3:4] = missing
+    @test all(ismissing, ws["C1:D4"])
+    ws[1:2, :] = reshape(collect(1:12), 2, 6)                    # a matrix of the rows' shape
+    @test ws["A1:F2"] == reshape(collect(1:12), 2, 6)
+    ws[:] = 9
+    @test all(==(9), ws["A1:F4"]) && get_dimension(ws) == SheetCore.CellRange("A1:F4")
+    ws[:, :] = 8
+    @test all(==(8), ws[:])
+    # the forms the precompile workload uses, and what doesn't fit
+    xf = newods(); sh = xf[1]
+    vals = Any[1, 2.5, "x", missing]
+    sh[5, :] = vals
+    @test isequal(sh["A5:D5"], permutedims(vals))
+    @test_throws ODSError sh[[1, 2], :] = [1, 2]               # a vector across two rows
+    @test_throws ODSError sh[1:2, :] = [1 2; 3 4; 5 6]         # a matrix of another shape
+    ro = readods(joinpath(DATA, "lo-values.ods"))[1]
+    @test_throws ODSError ro[1, :] = [1]
+    @test_throws ODSError ro[:, 1] = 1
+end
+
 @testset "styles kept or chosen (D-027)" begin
     xf = openods(joinpath(DATA, "lo-values.ods"); mode = "rw")
     ws = xf["V"]
@@ -349,6 +386,50 @@ end
     buf = IOBuffer()
     streamods(s -> writerow!(addsheet!(s), (1, 2)), buf)
     @test readods(IOBuffer(take!(buf)))[1]["B1"] == 2
+end
+
+@testset "content.xml written into the zip as it is made (D-048)" begin
+    C = ODSFiles._ChunkedIO
+    # the chunked writer: small writes gathered, large ones straight through, all in order
+    dest = IOBuffer()
+    c = C(dest; limit = 16)
+    write(c, "abc"); write(c, 'é'); write(c, 0x21); print(c, 42)
+    @test position(dest) == 0                                   # still gathered
+    write(c, "0123456789abcdef")                                # a chunk or more: through
+    write(c, SubString("xyz-tail", 1, 3)); write(c, view(Vector{UInt8}("0123456789"), 1:10))
+    ODSFiles._flush!(c)
+    @test String(take!(dest)) == "abcé!420123456789abcdefxyz0123456789"
+    @test ODSFiles._flush!(c) === nothing                       # nothing left: nothing written
+    # a content.xml of several chunks: the same bytes, and the same zip, as from a String
+    n = 30_000
+    xf = newods()
+    writetable!(xf[1], Any[collect(1:n), [i / 3 for i in 1:n], ["t&<$i>" for i in 1:n], [Date(2024, 1, 1) + Day(i % 400) for i in 1:n]],
+                ["a", "b", "c", "d"])
+    io = IOBuffer(); ODSFiles._write_chunked(x -> ODSFiles.write_new_content(x, xf, "1.4"), io)
+    s = String(take!(io))
+    @test ncodeunits(s) > 3 * 2^20
+    @test ODSFiles.package_bytes([ODSFiles.PackagePart("content.xml", s)]) ==
+          ODSFiles.package_bytes([ODSFiles.PackagePart("content.xml", x -> ODSFiles.write_new_content(x, xf, "1.4"))])
+    p = writeods(tmp("big.ods"), xf)
+    @test readtable(p, 1).data[3][n] == "t&<$n>"
+    # a patched save of it: the edit and the untouched rows around it
+    rw = openods(p; mode = "rw")
+    rw[1]["B2"] = -1.0; rw[1]["C$(n + 1)"] = "last"
+    q = writeods(tmp("big2.ods"), rw)
+    t = readtable(q, 1).data
+    @test t[2][1] == -1.0 && t[3][n] == "last" && t[3][n-1] == "t&<$(n - 1)>" && t[1][n] == n
+    # flat files are written the same way
+    f = writeods(tmp("big.fods"), xf)
+    @test isequal(readtable(f, 1).data, readtable(p, 1).data)
+    # writing doesn't hold the document: far less is allocated than content.xml's size (it
+    # was more than twice that). Short values in wide rows, so that what's measured is the
+    # document, not the writer's per-row and long-float costs.
+    wide = newods()
+    writetable!(wide[1], Any[collect(j:j+9_999) for j in 1:20], ["c$j" for j in 1:20])
+    io = IOBuffer(); ODSFiles._write_chunked(x -> ODSFiles.write_new_content(x, wide, "1.4"), io)
+    size = position(io)
+    writeods(tmp("warm.ods"), wide)
+    @test (@allocated writeods(tmp("big3.ods"), wide)) < size ÷ 4
 end
 
 @testset "LibreOffice opens what we write" begin

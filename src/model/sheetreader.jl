@@ -70,13 +70,18 @@ const _ROW_CONTAINERS = ("table:table-rows", "table:table-header-rows", "table:t
 const _COL_CONTAINERS = ("table:table-columns", "table:table-header-columns", "table:table-column-group")
 
 """
-    SheetReader(node::XML.LazyNode, styles::StyleIndex; skip_before=1, stop_after=MAX_ROWS)
+    SheetReader(node::XML.LazyNode, styles::StyleIndex; skip_before=1, stop_after=MAX_ROWS,
+                scan=_SCAN[])
 
 A pull reader over one sheet. `next_row!` gives its rows with content in order. Rows
 before `skip_before` are skipped without reading their cells; reading ends once a row
 starts after `stop_after`.
+
+With `scan` (the default), rows are read by the byte scanner (src/model/sheetscan.jl,
+D-047), which hands what it doesn't read itself to the XML.jl cursor walk below.
 """
 mutable struct SheetReader
+    node::XML.LazyNode{String}
     c::XML.Cursor{String}
     styles::StyleIndex
     nextrow::Int                 # the row number of the next table:table-row
@@ -85,17 +90,27 @@ mutable struct SheetReader
     skip_before::Int
     stop_after::Int
     done::Bool
+    # the byte scanner (D-047): the document's text, where the next item starts, and the
+    # depth of row and column containers open at that point
+    scan::Bool
+    src::String
+    pos::Int
+    depth::Int
+    attrs::Vector{NTuple{2,UnitRange{Int}}}   # scratch: a start tag's attributes
     # scratch for one row
     runs::Vector{CellRun}
     text::IOBuffer
 end
 
 function SheetReader(node::XML.LazyNode{String}, styles::StyleIndex;
-                     skip_before::Integer = 1, stop_after::Integer = SheetCore.MAX_ROWS)
+                     skip_before::Integer = 1, stop_after::Integer = SheetCore.MAX_ROWS,
+                     scan::Bool = _SCAN[])
     c = XML.Cursor(node)
     XML.next!(c)                 # on table:table (depth 1)
-    SheetReader(c, styles, 1, ColRun[], CellRange[], Int(skip_before), Int(stop_after), false,
-                CellRun[], IOBuffer())
+    r = SheetReader(node, c, styles, 1, ColRun[], CellRange[], Int(skip_before), Int(stop_after), false,
+                    false, "", 0, 0, NTuple{2,UnitRange{Int}}[], CellRun[], IOBuffer())
+    scan && _scan_start!(r)
+    return r
 end
 
 # The default style of column `col`, or -1.
@@ -113,6 +128,16 @@ The next row that has content, or `nothing` at the end of the sheet (or past `st
 """
 function next_row!(r::SheetReader)
     r.done && return nothing
+    if r.scan
+        mark = r.nextrow
+        nmerges = length(r.merges)
+        try
+            return _scan_next_row!(r)
+        catch e
+            e isa _ScanFallback || rethrow()
+            _scan_to_cursor!(r, mark, nmerges)
+        end
+    end
     c = r.c
     while true
         if XML.next!(c) === nothing || XML.depth(c) <= 1
@@ -147,10 +172,15 @@ function _read_column!(r::SheetReader)
             visible = v == "visible"
         end
     end
+    _push_column!(r, count, ds, visible)
+    XML.skip_element!(c)
+    return
+end
+
+function _push_column!(r::SheetReader, count::Int, ds::Int32, visible::Bool)
     first = isempty(r.cols) ? 1 : Int(r.cols[end].col) + Int(r.cols[end].count)
     count = clamp(count, 0, SheetCore.MAX_COLS - first + 1)
     count > 0 && push!(r.cols, ColRun(first, count, ds, visible))
-    XML.skip_element!(c)
     return
 end
 
@@ -166,13 +196,9 @@ function _read_row!(r::SheetReader)
             rowdefault = style_id(r.styles, v)
         end
     end
-    count = min(count, SheetCore.MAX_ROWS - rowno + 1)
-    r.nextrow = rowno + count
-    if rowno > r.stop_after
-        r.done = true
-        return nothing
-    end
-    if rowno + count - 1 < r.skip_before || count <= 0
+    rowno, count, read = _row_span!(r, count)
+    r.done && return nothing
+    if !read
         XML.skip_element!(c)
         return nothing
     end
@@ -183,7 +209,7 @@ function _read_row!(r::SheetReader)
         if XML.nodetype(ch) === XML.Element
             t = XML.tag(ch)
             if t == "table:table-cell" || t == "table:covered-table-cell"
-                col = _read_cell!(r, rowno, count, col, rowdefault, t == "table:covered-table-cell")
+                col = _read_cell!(r, ch, rowno, count, col, rowdefault, t == "table:covered-table-cell")
             else
                 XML.skip_element!(ch)
             end
@@ -193,12 +219,60 @@ function _read_row!(r::SheetReader)
     return RowData(rowno, count, copy(runs))
 end
 
+# Places a row of `count` repeats at `r.nextrow`: returns its first row number, its count
+# (cut at the sheet's end) and whether its cells are to be read. Past `stop_after`, the
+# reader is done.
+function _row_span!(r::SheetReader, count::Int)
+    rowno = r.nextrow
+    count = min(count, SheetCore.MAX_ROWS - rowno + 1)
+    r.nextrow = rowno + count
+    if rowno > r.stop_after
+        r.done = true
+        return rowno, count, false
+    end
+    return rowno, count, !(rowno + count - 1 < r.skip_before || count <= 0)
+end
+
 const _NO_ATTR = SubString("", 1, 0)
 
-# Reads the cell at the cursor, starting at column `col`; pushes its run if it has content.
-# Returns the column after it.
-function _read_cell!(r::SheetReader, rowno::Int, rowcount::Int, col::Int, rowdefault::Int32, covered::Bool)
-    c = r.c
+"""
+    CellAttrs
+
+The attributes of a `table:table-cell` that the reader uses, as read by the cursor walk or
+the byte scanner; values are as XML.jl reports them (D-047).
+"""
+struct CellAttrs
+    count::Int
+    style::Int32
+    vtype::SubString{String}     # office:value-type
+    cvtype::SubString{String}    # calcext:value-type
+    value::SubString{String}
+    datev::SubString{String}
+    timev::SubString{String}
+    boolv::SubString{String}
+    strv::Union{Nothing,String}
+    currency::Union{Nothing,String}
+    formula::Union{Nothing,String}
+    colspan::Int
+    rowspan::Int
+end
+
+# Reads the cell at the cursor `c`, starting at column `col`; pushes its run if it has
+# content. Returns the column after it.
+function _read_cell!(r::SheetReader, c::XML.Cursor, rowno::Int, rowcount::Int, col::Int, rowdefault::Int32, covered::Bool)
+    a = _cursor_cell_attrs(r, c)
+    count = min(a.count, SheetCore.MAX_COLS - col + 1)
+    count <= 0 && (XML.skip_element!(c); return col)
+    kind, flags, bits, text, needs_text = _cell_value(a, covered)
+    if needs_text
+        kind, text = _with_text(kind, text, _cell_text!(r, c))   # consumes the cell's children
+    else
+        XML.skip_element!(c)
+    end
+    return _store_cell!(r, a, rowno, rowcount, col, count, rowdefault, kind, flags, bits, text)
+end
+
+function _cursor_cell_attrs(r::SheetReader, c::XML.Cursor)
     count = 1
     style = Int32(-1)
     vtype = _NO_ATTR     # office:value-type
@@ -237,9 +311,13 @@ function _read_cell!(r::SheetReader, rowno::Int, rowcount::Int, col::Int, rowdef
             rowspan = max(1, something(tryparse(Int, v), 1))
         end
     end
-    count = min(count, SheetCore.MAX_COLS - col + 1)
-    count <= 0 && (XML.skip_element!(c); return col)
+    return CellAttrs(count, style, vtype, cvtype, value, datev, timev, boolv, strv, currency, formula, colspan, rowspan)
+end
 
+# The cell's value from its attributes: (kind, flags, bits, text, needs_text), where
+# `needs_text` asks for the text of its paragraphs.
+@inline function _cell_value(a::CellAttrs, covered::Bool)
+    vtype = a.vtype; cvtype = a.cvtype; value = a.value
     kind = CK_EMPTY; flags = covered ? F_COVERED : 0x00; bits = UInt64(0); text = nothing
     needs_text = false
     if cvtype == "error"
@@ -248,41 +326,46 @@ function _read_cell!(r::SheetReader, rowno::Int, rowcount::Int, col::Int, rowdef
         kind = vtype == "float" ? CK_FLOAT : vtype == "percentage" ? CK_PERCENT : CK_CURRENCY
         bits = reinterpret(UInt64, _parse_float(value))
         _is_intlike(value) && (flags |= F_INTLIKE)
-        kind === CK_CURRENCY && (text = currency)
+        kind === CK_CURRENCY && (text = a.currency)
     elseif vtype == "date"
-        d = parse_odf_date(datev)
+        d = parse_odf_date(a.datev)
         if d isa Dates.Date
             kind = CK_DATE; bits = reinterpret(UInt64, Dates.value(d))
         elseif d isa Dates.DateTime
             kind = CK_DATETIME; bits = reinterpret(UInt64, Dates.value(d))
         end
     elseif vtype == "time"
-        ns = parse_odf_duration(timev)
+        ns = parse_odf_duration(a.timev)
         ns === nothing || (kind = CK_TIME; bits = reinterpret(UInt64, ns))
     elseif vtype == "boolean"
         kind = CK_BOOL
-        bits = UInt64(boolv == "true" || boolv == "1")
+        bits = UInt64(a.boolv == "true" || a.boolv == "1")
     elseif vtype == "string"
         kind = CK_STRING
-        strv === nothing ? (needs_text = true) : (text = strv)
+        a.strv === nothing ? (needs_text = true) : (text = a.strv)
     elseif vtype == "" || vtype == "void"
         # F-022: paragraphs without a value type are a string (unless it is a formula
         # without a result, written with an empty paragraph)
         needs_text = true
     end
+    return kind, flags, bits, text, needs_text
+end
 
-    if needs_text
-        t = _cell_text!(r)                     # consumes the cell's children
-        if kind === CK_EMPTY
-            t === nothing || isempty(t) || (kind = CK_STRING; text = t)
-        else
-            text = something(t, "")
-        end
-    else
-        XML.skip_element!(c)
+# The kind and text once the paragraphs' text `t` (`nothing`: no paragraph) is read.
+@inline function _with_text(kind::CellKind, text, t::Union{Nothing,String})
+    if kind === CK_EMPTY
+        (t === nothing || isempty(t)) && return kind, text
+        return CK_STRING, t
     end
+    return kind, something(t, "")
+end
 
+# Stores the cell (its run, if it has content, and its merge); returns the column after it.
+function _store_cell!(r::SheetReader, a::CellAttrs, rowno::Int, rowcount::Int, col::Int, count::Int,
+                      rowdefault::Int32, kind::CellKind, flags::UInt8, bits::UInt64, text)
+    formula = a.formula; colspan = a.colspan; rowspan = a.rowspan
     # the effective style (F-009): the cell's own, else the row's, else the column's
+    style = a.style
     if style < 0
         style = rowdefault
     end
@@ -322,8 +405,7 @@ end
 # "\n"; text:s is spaces (`text:c`, default 1), text:tab a tab, text:line-break a newline;
 # spans, links and other inline elements give their text; annotations are skipped.
 # Returns `nothing` when the cell has no paragraph. Consumes the cell's children.
-function _cell_text!(r::SheetReader)
-    c = r.c
+function _cell_text!(r::SheetReader, c::XML.Cursor)
     buf = r.text
     truncate(buf, 0)
     nparas = 0
@@ -339,6 +421,12 @@ function _cell_text!(r::SheetReader)
             end
         end
     end
+    return _paragraphs_text(buf, nparas)
+end
+
+# The text written to `buf` for `nparas` paragraphs (`nothing` for none), with any CR as
+# a line end.
+function _paragraphs_text(buf::IOBuffer, nparas::Int)
     nparas == 0 && return nothing
     s = String(take!(buf))
     return occursin('\r', s) ? replace(s, "\r\n" => "\n", '\r' => '\n') : s

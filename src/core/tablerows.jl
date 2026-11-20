@@ -26,11 +26,15 @@
 # and, optionally, for speed:
 #   table_push_value!(col::Vector, r, column::Int, ms::Set{String}) -> Vector
 #     push the value to a typed column (see `_push_column!`), returning the column
+#   table_rows_batchable(::Type{R}) -> Bool
+#     true when a row stays valid after the source has given the next one; `gettable`
+#     then fills the columns a batch of rows at a time (D-047). Default false.
 #
 
 function table_row_value end
 function table_row_isempty end
 function table_row_columns end
+table_rows_batchable(::Type) = false
 
 @inline function _apply_missing_strings(val, ms::Set{String})
     isempty(ms) && return val
@@ -338,8 +342,48 @@ function _push_row!(data::Vector{Any}, r, sheet_columns::Vector{Int}, ms::Set{St
     return nothing
 end
 
+# Pushes a batch of rows (`nothing`: an all-missing row) to one column. A function barrier:
+# the loop is compiled for the column's element type. When a value widens the column, the
+# rest of the batch goes to the wider column.
+function _push_rows!(col::Vector, buf::Vector, from::Int, column::Int, ms::Set{String})
+    @inbounds for i in from:length(buf)
+        r = buf[i]
+        new = r === nothing ? _push_column!(col, missing) : table_push_value!(col, r, column, ms)
+        new === col || return _push_rows!(new, buf, i + 1, column, ms)
+    end
+    return col
+end
+
+function _push_batch!(data::Vector{Any}, buf::Vector, sheet_columns::Vector{Int}, ms::Set{String})
+    for ci in eachindex(data)
+        data[ci] = _push_rows!(data[ci], buf, 1, sheet_columns[ci], ms)
+    end
+    return nothing
+end
+
+const _TABLE_BATCH = 256
+
 function _gettable_rows!(data::Vector{Any}, itr::TableRowIterator, state::TableRowIteratorState)
     sheet_columns = itr.index.column_map
+    R = _source_row_type(itr.itr)
+    if table_rows_batchable(R)
+        # a batch of rows at a time, column by column: one dynamic call per column and
+        # batch instead of one per cell
+        buf = Union{Nothing,R}[]
+        sizehint!(buf, _TABLE_BATCH)
+        while true
+            step = _table_step(itr, state)
+            step === nothing && break
+            sheet_row, state = step
+            push!(buf, sheet_row)
+            if length(buf) == _TABLE_BATCH
+                _push_batch!(data, buf, sheet_columns, itr.missing_strings)
+                empty!(buf)
+            end
+        end
+        isempty(buf) || _push_batch!(data, buf, sheet_columns, itr.missing_strings)
+        return nothing
+    end
     while true
         step = _table_step(itr, state)
         step === nothing && break

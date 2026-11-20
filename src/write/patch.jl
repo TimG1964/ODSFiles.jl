@@ -113,7 +113,7 @@ mutable struct _PatchState
     store::SheetStore
     styles::StyleIndex
     src::String
-    out::IOBuffer
+    out::_ChunkedIO                # the document being written (D-048)
     pos::Int                       # the next index of src to copy
     nextrow::Int                   # the row number of the next table:table-row
     ncols::Int                     # columns defined so far
@@ -511,11 +511,12 @@ function _write_edited_row!(st::_PatchState, ln::XML.LazyNode, text::SubString{S
 end
 
 """
-    patched_table(ws::Worksheet) -> String
+    write_patched_table(out::_ChunkedIO, ws::Worksheet)
 
-The `table:table` of a sheet read from the file, with its edits (D-023).
+Writes the `table:table` of a sheet read from the file, with its edits (D-023), to `out`
+(D-048).
 """
-function patched_table(ws::Worksheet; display::Bool = true)
+function write_patched_table(out::_ChunkedIO, ws::Worksheet; display::Bool = true)
     node = ws.entry.node
     src = parent(XML.sourcetext(node))
     store = _cached_store(ws)
@@ -533,11 +534,11 @@ function patched_table(ws::Worksheet; display::Bool = true)
     end
     erows = _merge_ranges(ranges)
     sp = XML.sourcespan(node)
-    st = _PatchState(ws, store, get_odsfile(ws).styles, src, IOBuffer(sizehint = ncodeunits(src) ÷ 4 + 1024),
+    st = _PatchState(ws, store, get_odsfile(ws).styles, src, out,
                      first(sp), 1, 0, need, false, false, drows, dcols, erows, f, display)
     _walk!(st, node, :table)
     _copy_to!(st, nextind(src, last(sp)))      # the rest of the table, verbatim
-    return String(take!(st.out))
+    return nothing
 end
 
 const _NAMESPACES = [
@@ -606,33 +607,44 @@ function _append_splice!(splices, src::AbstractString, node, tag::AbstractString
     return
 end
 
-# `src` with the splices (first, last, replacement; last = first - 1 inserts) made. Splices
-# at the same place keep their order.
-function _apply_splices(src::AbstractString, splices::Vector{Tuple{Int,Int,String}})
+# A splice: (first, last, replacement), where last = first - 1 inserts. The replacement is
+# text, or a function that writes it to the output (an edited or new sheet, D-048).
+const _Splice = Tuple{Int,Int,Union{String,Function}}
+
+# Writes `src` with the splices made to `out`. Splices at the same place keep their order.
+function _apply_splices(out::IO, src::AbstractString, splices::Vector{<:Tuple{Int,Int,Any}})
     sort!(splices; by = x -> (x[1], x[2]))
-    out = IOBuffer(sizehint = ncodeunits(src) + sum(s -> ncodeunits(s[3]), splices; init = 0))
     pos = firstindex(src)
     for (a, b, rep) in splices
-        a > pos && print(out, SubString(src, pos, prevind(src, a)))
-        print(out, rep)
+        a > pos && write(out, SubString(src, pos, prevind(src, a)))
+        rep isa Function ? rep(out) : write(out, rep)
         pos = b >= a ? nextind(src, b) : max(pos, a)
     end
-    pos <= lastindex(src) && print(out, SubString(src, pos))
+    pos <= lastindex(src) && write(out, SubString(src, pos))
+    return nothing
+end
+
+# `src` with the splices made, as a string (for the small parts: styles.xml).
+function _apply_splices(src::AbstractString, splices::Vector{<:Tuple{Int,Int,Any}})
+    out = IOBuffer(sizehint = ncodeunits(src) + sum(s -> s[3] isa String ? ncodeunits(s[3]) : 0, splices; init = 0))
+    _apply_splices(out, src, splices)
     return String(take!(out))
 end
 
 """
-    patched_content(xf::ODSFile) -> String
+    write_patched_content(out::_ChunkedIO, xf::ODSFile)
 
-The content.xml (or flat document) of a file that was read, with its edits, new sheets
-and new styles (D-023). A flat document also gets the named styles ODSFiles added (D-045).
+Writes the content.xml (or flat document) of a file that was read, with its edits, new
+sheets and new styles (D-023), to `out` as it is made (D-048). A flat document also gets
+the named styles ODSFiles added (D-045). Text that isn't edited is copied from the
+original in pieces as large as the gaps between edits.
 """
-function patched_content(xf::ODSFile; display::Bool = true)
+function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = true)
     src, rootspan, kids = _top_elements(xf.content)
     autostyles = get(kids, "office:automatic-styles", nothing)
     body = get(kids, "office:body", nothing)
     facedecls = get(kids, "office:font-face-decls", nothing)
-    splices = Tuple{Int,Int,String}[]      # (first, last, replacement); last = first - 1 inserts
+    splices = _Splice[]
     fx = added_faces_xml(xf.styles)
     _ns_splice!(splices, src, rootspan, !isempty(fx), _needs_loext(xf.styles))
     # font faces (phase 4): in office:font-face-decls, which comes before the styles
@@ -648,22 +660,21 @@ function patched_content(xf::ODSFile; display::Bool = true)
         ws.entry === nothing && continue
         sp = XML.sourcespan(ws.entry.node)
         last_table_end = max(last_table_end, last(sp))
-        _has_edits(ws) && push!(splices, (first(sp), last(sp), patched_table(ws; display)))
+        _has_edits(ws) && push!(splices, (first(sp), last(sp), io -> write_patched_table(io, ws; display)))
     end
     # new sheets, after the last one
     newsheets = [ws for ws in _sheets(xf) if ws.entry === nothing]
     if !isempty(newsheets)
-        io = IOBuffer()
-        foreach(ws -> write_table(io, ws; display), newsheets)
         at = last_table_end > 0 ? nextind(src, last_table_end) : _spreadsheet_end(body, src)
-        push!(splices, (at, at - 1, String(take!(io))))
+        push!(splices, (at, at - 1, io -> foreach(ws -> write_table(io, ws; display), newsheets)))
     end
-    # typed and formatting styles
+    # typed and formatting styles (before the sheets are written, which add none)
     sx = added_styles_xml(xf.styles, used_styles(xf))
     if !isempty(sx)
         _append_splice!(splices, src, autostyles, "office:automatic-styles", sx, body)
     end
-    return _apply_splices(src, splices)
+    _apply_splices(out, src, splices)
+    return nothing
 end
 
 """

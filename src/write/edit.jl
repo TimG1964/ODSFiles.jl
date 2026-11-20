@@ -107,6 +107,10 @@ Write `value` into a cell, or into every cell of a range. The file must be writa
   one-row or one-column range.
 - `ref` takes the forms of [`getdata`](@ref): `"B2"`, `"B2:D4"`, `"Sheet1.B2"`, `"Sheet1!B2"`,
   integers and ranges.
+- With `:` for the rows or columns, as in XLSX.jl: `ws[3, :] = [1, 2, 3]` writes a vector
+  along row 3 from column A, and `ws[:, 2] = v` down column B from row 1. Any other value
+  fills the cells addressed, where `:` stands for the sheet's used columns or rows
+  (`ws[3, :] = 0`, `ws[:, 2:3] = missing`, `ws[:] = 1`).
 
 A cell keeps its style when that style's format fits the new value. Otherwise dates,
 date-times, times and booleans get ISO formats, and numbers and text the `Default` style
@@ -212,6 +216,36 @@ function Base.setindex!(ws::Worksheet, v, r::Union{Integer,AbstractVector{<:Inte
     end
     return _set_block!(ws, _as_range(r), _as_range(c), v)
 end
+
+# Whole rows and columns with `:`, as XLSX.jl (src/write.jl `setdata!` with `Colon`, and the
+# `setindex!` forms that call it, @ 0.13.4): a vector goes along one row from column A
+# (`ws[row, :]`) or down one column from row 1 (`ws[:, col]`); any other value fills the
+# cells addressed, where `:` stands for the sheet's used rows or columns (`get_dimension`,
+# as the getters read them).
+const _SetIndex = Union{Integer,AbstractVector{<:Integer}}
+
+setdata!(ws::Worksheet, row::Integer, ::Colon, v::AbstractVector) = setdata!(ws, CellRef(row, 1), v, 2)
+setdata!(ws::Worksheet, ::Colon, col::Integer, v::AbstractVector) = setdata!(ws, CellRef(1, col), v, 1)
+function setdata!(ws::Worksheet, rows::_SetIndex, ::Colon, v)
+    _require_writable(ws, "write to a row")
+    dim = get_dimension(ws)
+    return _set_block!(ws, _as_range(rows), column_number(dim.start):column_number(dim.stop), v)
+end
+function setdata!(ws::Worksheet, ::Colon, cols::_SetIndex, v)
+    _require_writable(ws, "write to a column")
+    dim = get_dimension(ws)
+    return _set_block!(ws, row_number(dim.start):row_number(dim.stop), _as_range(cols), v)
+end
+function setdata!(ws::Worksheet, ::Colon, v)
+    _require_writable(ws, "write to a range")
+    return setdata!(ws, get_dimension(ws), v)
+end
+setdata!(ws::Worksheet, ::Colon, ::Colon, v) = setdata!(ws, :, v)
+
+Base.setindex!(ws::Worksheet, v, r::_SetIndex, ::Colon) = setdata!(ws, r, :, v)
+Base.setindex!(ws::Worksheet, v, ::Colon, c::_SetIndex) = setdata!(ws, :, c, v)
+Base.setindex!(ws::Worksheet, v, ::Colon, ::Colon) = setdata!(ws, :, v)
+Base.setindex!(ws::Worksheet, v, ::Colon) = setdata!(ws, :, v)
 
 #
 # Formulas

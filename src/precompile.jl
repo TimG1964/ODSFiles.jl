@@ -29,7 +29,7 @@ PCT.@setup_workload begin
                     sh[CellRef(2, 9 + c)] = v
                     sh[3, 9 + c] = v
                 end
-                sh["A5"] = vals    # XLSX.jl's workload has `sh[5, :] = vals`, which ODSFiles lacks
+                sh[5, :] = vals    # as XLSX.jl's workload
 
                 sh["J6:K7"] = "y"
                 setFormula(sh, "L1"; val = "=SUM(A2:A4)")

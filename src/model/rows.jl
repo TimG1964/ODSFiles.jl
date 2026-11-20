@@ -49,6 +49,8 @@ end
 SheetCore.table_row_value(r::SheetRow, col::Int) = getdata(r, col)
 SheetCore.table_row_isempty(r::SheetRow) = isempty(r.data.runs)
 SheetCore.table_row_columns(r::SheetRow) = Int[c for run in r.data.runs for c in run.col:_lastcol(run)]
+# A SheetRow's runs are its own (the reader copies them), so rows can be held in batches.
+SheetCore.table_rows_batchable(::Type{SheetRow}) = true
 function SheetCore.table_push_value!(col::Vector, r::SheetRow, column::Int, ms::Set{String})
     run = _run_at(r.data.runs, column)
     run === nothing && return SheetCore._push_column!(col, missing)

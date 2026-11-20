@@ -1,0 +1,13 @@
+case	xlsx_ms	ods_ms	ratio	xlsx_mib	ods_mib
+format_cells	13.76	8.94	0.649	8.7	12.5
+setFont_1M	277.84	37.16	0.134	167.9	7.2
+setFill_1M	189.35	38.61	0.204	15.3	7.2
+setBorder_1M	381.14	40.22	0.106	76.3	7.2
+setAlignment_1M	191.65	37.83	0.197	15.3	7.2
+setFormat_1M	174.87	43.53	0.249	15.3	7.2
+setUniformFont_1M	46.91	45.89	0.978	0.0	7.2
+setFont_1M_mixed	154.87	40.30	0.260	153.1	7.4
+setUniformFont_1M_mixed	43.97	40.42	0.919	0.1	7.2
+write_1M	399.31	528.36	1.323	60.1	655.0
+getFont_10k	9.61	5.42	0.564	20.8	19.3
+autofit_20k	176.18	122.35	0.694	259.1	158.7

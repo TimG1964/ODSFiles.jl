@@ -75,12 +75,14 @@ end
 
 An incremental walk over the children of `office:spreadsheet`: each `next_body_item!` gives
 the next sheet, named-expressions or calculation-settings element, skipping each element
-whole. Reading the first sheet thus never scans the ones after it (phase 3).
+whole. Reading the first sheet thus never scans the ones after it (phase 3), and an item is
+skipped only when the next one is asked for, so that finding a sheet doesn't scan it (D-047).
 """
 mutable struct BodyScanner
     c::XML.Cursor{String}
     depth::Int          # the depth of office:spreadsheet
     done::Bool
+    pending::Bool       # the cursor is still on the last item given: skip it first
 end
 
 function BodyScanner(xml::String)
@@ -90,9 +92,9 @@ function BodyScanner(xml::String)
     end
     XML.nodetype(c) === XML.Element || throw(ArgumentError("no root element"))
     for step in _BODY_PATH
-        _descend_to!(c, step) || return BodyScanner(c, 0, true)
+        _descend_to!(c, step) || return BodyScanner(c, 0, true, false)
     end
-    return BodyScanner(c, XML.depth(c), false)
+    return BodyScanner(c, XML.depth(c), false, false)
 end
 
 """
@@ -104,6 +106,10 @@ at the end of the spreadsheet.
 function next_body_item!(s::BodyScanner)
     s.done && return nothing
     c = s.c
+    if s.pending
+        XML.skip_element!(c)
+        s.pending = false
+    end
     while true
         if XML.next!(c) === nothing || XML.depth(c) <= s.depth
             s.done = true
@@ -117,11 +123,11 @@ function next_body_item!(s::BodyScanner)
                 k == "table:name" && (name = String(v))
             end
             node = XML.LazyNode(c)
-            XML.skip_element!(c)
+            s.pending = true
             return (:table, node, name)
         elseif t == "table:named-expressions" || t == "table:calculation-settings"
             node = XML.LazyNode(c)
-            XML.skip_element!(c)
+            s.pending = true
             return (t == "table:named-expressions" ? :names : :calc, node, "")
         end
         XML.skip_element!(c)
