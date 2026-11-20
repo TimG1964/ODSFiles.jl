@@ -45,5 +45,11 @@ The formatting functions work as in XLSX.jl too, with the differences listed in
   read-only files, and empty cells and whole columns are formatted as LibreOffice formats
   them. ODSFiles also has named cell styles ([`setCellStyle`](@ref), [`addCellStyle!`](@ref)),
   which XLSX.jl lacks. See [Formatting](guide/formatting.md).
-- **Not yet available:** sheet operations, Excel-style tables, conditional formats,
-  comments, images and charts, and `writetable`'s `as_table` and `freeze_header`.
+- **Inserting and deleting rows and columns** ([`insertRows`](@ref), [`insertColumns`](@ref),
+  [`deleteRows`](@ref), [`deleteColumns`](@ref)) take XLSX.jl's arguments and behave as
+  LibreOffice does: a deleted reference is stored as `#REF!` without its sheet, 3-D references
+  follow, new rows copy the formatting of the row above (borders included), and new columns
+  that of the column to their left, with the width of the column they push right.
+- **Not yet available:** other sheet operations (renaming, copying, moving, deleting sheets),
+  Excel-style tables, conditional formats, comments, images and charts, and `writetable`'s
+  `as_table` and `freeze_header`.

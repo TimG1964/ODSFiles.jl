@@ -130,6 +130,16 @@ function _check_overwrite(dest, overwrite::Bool)
         throw(ODSError("$dest already exists. Use `overwrite=true` to replace it."))
 end
 
+# An embedded object's content (a chart: `Object 1/content.xml`) with its references replayed
+# through the structural edits (phase 5); the original bytes when none changes.
+function _rewritten_part(xf::ODSFile, bytes::Vector{UInt8})
+    s = String(copy(bytes))
+    out = IOBuffer()
+    rewrite_xml(out, RefRewriter(xf.ops, s), s, 1, ncodeunits(s))
+    new = take!(out)
+    return new == bytes ? bytes : new
+end
+
 # The parts of a zipped file that was read, with content.xml patched (D-023).
 function _patched_parts(xf::ODSFile; display::Bool = true)
     cont = xf.container
@@ -144,6 +154,7 @@ function _patched_parts(xf::ODSFile; display::Bool = true)
         end
         data = name == "content.xml" ? content :
                name == "styles.xml" && has_named_styles(xf.styles) ? patched_styles(xf, String(read_bytes(cont, name))) :
+               !isempty(xf.ops) && endswith(name, "/content.xml") ? _rewritten_part(xf, read_bytes(cont, name)) :
                read_bytes(cont, name)
         mt = get(mts, name, guess_mediatype(name))
         push!(parts, PackagePart(name, data; mediatype = isempty(mt) ? guess_mediatype(name) : mt))

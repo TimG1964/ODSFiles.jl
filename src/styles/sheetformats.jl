@@ -25,7 +25,8 @@ function sheet_formats(ws::Worksheet)
 end
 
 # Whether the sheet changed since it was read: its cells or its formats.
-_has_edits(ws::Worksheet) = !isempty(ws.dirty) || (ws.formats !== nothing && _formats_touched(ws.formats))
+_has_edits(ws::Worksheet) = !isempty(ws.dirty) || (ws.formats !== nothing && _formats_touched(ws.formats)) ||
+    ws.rowmap !== nothing || ws.colmap !== nothing
 
 # The formatted cell (row, col) without a value, or `nothing`.
 function _fmt_cell(f::SheetFormats, row::Integer, col::Integer)

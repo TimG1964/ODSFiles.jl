@@ -56,6 +56,7 @@ include("model/cells.jl")
 include("model/sheetreader.jl")
 include("model/sheetscan.jl")
 include("styles/formats.jl")
+include("model/indexmap.jl")
 include("model/workbook.jl")
 include("model/access.jl")
 include("model/rows.jl")
@@ -76,8 +77,11 @@ include("styles/format.jl")
 include("styles/merge.jl")
 include("styles/layout.jl")
 include("styles/named.jl")
+include("write/lines.jl")
 include("write/xmlout.jl")
+include("write/rewrite.jl")
 include("write/patch.jl")
+include("write/patchmap.jl")
 include("write/save.jl")
 include("write/stream.jl")
 include("write/writetable.jl")
@@ -98,7 +102,9 @@ export
     setUniformFont, setUniformBorder, setUniformFill, setUniformAlignment, setUniformStyle,
     getMergedCells, isMergedCell, getMergedBaseCell, mergeCells, removeMergedCells,
     setColumnWidth, setRowHeight, autofitColumns,
-    setCellStyle, addCellStyle!
+    setCellStyle, addCellStyle!,
+    # sheets (phase 5)
+    insertRows, insertColumns, deleteRows, deleteColumns
 
 @static if VERSION >= v"1.11"
     eval(Meta.parse("public getcell, getcellrange, getFormula, get_dimension, ODSError, Cell, EmptyCell, DataTable, TableRow, TableRowIterator, SheetRow, StreamWriter, StreamSheet, " *

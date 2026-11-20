@@ -36,8 +36,26 @@ _raw_attrs(text::AbstractString) =
     [(String(m.captures[1]), String(m.captures[2])) for m in eachmatch(_ATTR_RX, SubString(text, 1, _start_tag_end(text)))]
 
 function _attr_int(text::AbstractString, name::AbstractString, default::Int)
-    for (k, v) in _raw_attrs(text)
-        k == name && return something(tryparse(Int, strip(v[2:end-1])), default)
+    # the attribute in the start tag, preceded by white space and followed by `=` and a quote
+    e = _start_tag_end(text)
+    tag = SubString(text, 1, e)
+    i = 1
+    while (r = findnext(name, tag, i)) !== nothing
+        p = prevind(tag, first(r))
+        q = nextind(tag, last(r))
+        if p >= 1 && isspace(tag[p])
+            while q <= ncodeunits(tag) && isspace(tag[q]); q = nextind(tag, q); end
+            if q <= ncodeunits(tag) && tag[q] == '='
+                q = nextind(tag, q)
+                while q <= ncodeunits(tag) && isspace(tag[q]); q = nextind(tag, q); end
+                if q <= ncodeunits(tag) && (tag[q] == '"' || tag[q] == '\'')
+                    z = findnext(tag[q], tag, nextind(tag, q))
+                    z === nothing && return default
+                    return something(tryparse(Int, strip(SubString(tag, nextind(tag, q), prevind(tag, z)))), default)
+                end
+            end
+        end
+        i = nextind(tag, last(r))
     end
     return default
 end
@@ -125,13 +143,45 @@ mutable struct _PatchState
     erows::Vector{UnitRange{Int}}  # every edited row (cells, restyled blocks, row formats), sorted, disjoint
     fmt::Union{Nothing,SheetFormats}   # the sheet's formats, if read
     display::Bool                  # write display text in typed cells (D-029)
+    # phase 5: structural edits (D-049)
+    rw::Union{Nothing,RefRewriter} # the operations to replay on copied text, or nothing
+    sheetname::String              # the sheet's name in the original text
+    orow::Int                      # original rows walked so far (the mapped walk)
+    ocol::Int                      # original columns walked so far
+    posrow::Int                    # original rows before `pos` (the mapped walk; -1 elsewhere)
 end
+
+# Copies original text to the output: as it is, or with its references replayed through the
+# operations (phase 5). `row`/`col`: the original position of the cell the text is, if any.
+# `orig`: where in the source a text made from it (a retagged element) came from.
+function _emit(st::_PatchState, s::AbstractString; row::Int = 0, col::Int = 0, orig::Union{Nothing,UnitRange{Int}} = nothing)
+    rw = st.rw
+    if rw === nothing
+        print(st.out, s)
+    elseif s isa SubString{String} && parent(s) === rw.src
+        r = parentindices(s)[1]
+        rewrite_xml(st.out, rw, rw.src, first(r), last(r); sheet = st.sheetname, row, col)
+    elseif orig !== nothing && !_has_hits(rw, first(orig), last(orig))
+        print(st.out, s)
+    else
+        t = String(s)
+        rewrite_xml(st.out, rw, t, 1, ncodeunits(t); sheet = st.sheetname, row, col)
+    end
+    return
+end
+
+_span(s::SubString{String}) = parentindices(s)[1]
 
 function _copy_to!(st::_PatchState, idx::Int)
     if idx > st.pos
-        print(st.out, SubString(st.src, st.pos, prevind(st.src, idx)))
+        if st.rw === nothing
+            print(st.out, SubString(st.src, st.pos, prevind(st.src, idx)))
+        else
+            rewrite_xml(st.out, st.rw, st.src, st.pos, prevind(st.src, idx); sheet = st.sheetname, rowbase = st.posrow)
+        end
     end
     st.pos = max(st.pos, idx)
+    st.posrow >= 0 && (st.posrow = st.orow)
     return
 end
 
@@ -400,18 +450,18 @@ function _patch_row!(st::_PatchState, ln::XML.LazyNode, text::SubString{String},
             plain += n
             continue
         end
-        plain > 0 && print(st.out, _retag(text, "table:number-rows-repeated", plain))
+        plain > 0 && _emit(st, _retag(text, "table:number-rows-repeated", plain))
         plain = 0
         if isempty(cols)
-            print(st.out, _set_attrs(_retag(text, "table:number-rows-repeated", n), changes))
+            _emit(st, _set_attrs(_retag(text, "table:number-rows-repeated", n), changes))
         else
             _write_edited_row!(st, ln, text, a, n, cols, changes)
         end
     end
     if plain == cnt
-        print(st.out, text)                      # nothing changed after all: as it was
+        _emit(st, text)                          # nothing changed after all: as it was
     elseif plain > 0
-        print(st.out, _retag(text, "table:number-rows-repeated", plain))
+        _emit(st, _retag(text, "table:number-rows-repeated", plain))
     end
     return
 end
@@ -471,19 +521,19 @@ function _write_edited_row!(st::_PatchState, ln::XML.LazyNode, text::SubString{S
                 cur = col
                 while ci <= length(cols) && first(cols[ci]) <= lastc
                     x = max(first(cols[ci]), cur); y = min(last(cols[ci]), lastc)
-                    x > cur && print(out, _retag(celltext, "table:number-columns-repeated", x - cur))
+                    x > cur && _emit(st, _retag(celltext, "table:number-columns-repeated", x - cur))
                     _write_model_cols!(st, a, x, y, celltext, rowdefault)
                     cur = y + 1
                     last(cols[ci]) <= lastc ? (ci += 1) : break
                 end
                 if cur == col
-                    print(out, celltext)
+                    _emit(st, celltext)
                 elseif cur <= lastc
-                    print(out, _retag(celltext, "table:number-columns-repeated", lastc - cur + 1))
+                    _emit(st, _retag(celltext, "table:number-columns-repeated", lastc - cur + 1))
                 end
                 col = lastc + 1
             else
-                print(out, celltext)
+                _emit(st, celltext)
             end
             lpos = nextind(src, last(csp))
             XML.skip_element!(ch)
@@ -516,7 +566,7 @@ end
 Writes the `table:table` of a sheet read from the file, with its edits (D-023), to `out`
 (D-048).
 """
-function write_patched_table(out::_ChunkedIO, ws::Worksheet; display::Bool = true)
+function write_patched_table(out::_ChunkedIO, ws::Worksheet; display::Bool = true, rw::Union{Nothing,RefRewriter} = nothing)
     node = ws.entry.node
     src = parent(XML.sourcetext(node))
     store = _cached_store(ws)
@@ -535,8 +585,13 @@ function write_patched_table(out::_ChunkedIO, ws::Worksheet; display::Bool = tru
     erows = _merge_ranges(ranges)
     sp = XML.sourcespan(node)
     st = _PatchState(ws, store, get_odsfile(ws).styles, src, out,
-                     first(sp), 1, 0, need, false, false, drows, dcols, erows, f, display)
-    _walk!(st, node, :table)
+                     first(sp), 1, 0, need, false, false, drows, dcols, erows, f, display, rw, ws.entry.name, 0, 0, -1)
+    if ws.rowmap !== nothing || ws.colmap !== nothing
+        st.posrow = 0
+        _walk_mapped!(st, node, :table)        # rows or columns inserted or deleted (phase 5)
+    else
+        _walk!(st, node, :table)
+    end
     _copy_to!(st, nextind(src, last(sp)))      # the rest of the table, verbatim
     return nothing
 end
@@ -612,15 +667,21 @@ end
 const _Splice = Tuple{Int,Int,Union{String,Function}}
 
 # Writes `src` with the splices made to `out`. Splices at the same place keep their order.
-function _apply_splices(out::IO, src::AbstractString, splices::Vector{<:Tuple{Int,Int,Any}})
+function _apply_splices(out::IO, src::AbstractString, splices::Vector{<:Tuple{Int,Int,Any}};
+                        rw::Union{Nothing,RefRewriter} = nothing)
     sort!(splices; by = x -> (x[1], x[2]))
     pos = firstindex(src)
     for (a, b, rep) in splices
-        a > pos && write(out, SubString(src, pos, prevind(src, a)))
+        if a > pos
+            rw === nothing ? write(out, SubString(src, pos, prevind(src, a))) :
+                             rewrite_xml(out, rw, String(src), pos, prevind(src, a))   # phase 5: references replayed
+        end
         rep isa Function ? rep(out) : write(out, rep)
         pos = b >= a ? nextind(src, b) : max(pos, a)
     end
-    pos <= lastindex(src) && write(out, SubString(src, pos))
+    if pos <= lastindex(src)
+        rw === nothing ? write(out, SubString(src, pos)) : rewrite_xml(out, rw, String(src), pos, lastindex(src))
+    end
     return nothing
 end
 
@@ -654,13 +715,20 @@ function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = tru
     # named styles (a flat document holds office:styles), before the automatic styles
     nx = xf.container.format === :fods ? named_styles_xml(xf.styles) : ""
     isempty(nx) || _append_splice!(splices, src, stylesnode, "office:styles", nx, something(autostyles, body, Some(nothing)))
-    # edited sheets
+    # structural edits (phase 5): their references are replayed on all the text that is copied
+    rw = isempty(xf.ops) ? nothing : RefRewriter(xf.ops, String(src))
+    # edited sheets (and, after structural edits, every other sheet: its references are rewritten)
     last_table_end = 0
     for ws in _sheets(xf)
         ws.entry === nothing && continue
         sp = XML.sourcespan(ws.entry.node)
         last_table_end = max(last_table_end, last(sp))
-        _has_edits(ws) && push!(splices, (first(sp), last(sp), io -> write_patched_table(io, ws; display)))
+        if _has_edits(ws)
+            push!(splices, (first(sp), last(sp), io -> write_patched_table(io, ws; display, rw)))
+        elseif rw !== nothing
+            name = ws.entry.name
+            push!(splices, (first(sp), last(sp), io -> rewrite_xml(io, rw, src, first(sp), last(sp); sheet = name)))
+        end
     end
     # new sheets, after the last one
     newsheets = [ws for ws in _sheets(xf) if ws.entry === nothing]
@@ -673,7 +741,7 @@ function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = tru
     if !isempty(sx)
         _append_splice!(splices, src, autostyles, "office:automatic-styles", sx, body)
     end
-    _apply_splices(out, src, splices)
+    _apply_splices(out, src, splices; rw)
     return nothing
 end
 

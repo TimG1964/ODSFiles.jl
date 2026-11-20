@@ -411,19 +411,25 @@ function write_columns(io::IO, cols::Vector{ColFormat}, styles::StyleIndex, a::I
 end
 
 """
-    write_model_rows(io, store, f::SheetFormats, styles, from) -> Int
+    write_model_rows(io, store, f::SheetFormats, styles, from; upto = MAX_ROWS, pad = false) -> Int
 
-Write the rows from row `from` on, with their cells, formatted empty cells and row formats
-(and empty rows between them). Returns the row after the last one written.
+Write the rows from row `from` on (to row `upto`), with their cells, formatted empty cells and
+row formats (and empty rows between them). With `pad`, empty rows fill the rest of the span to
+`upto`. Returns the row after the last one written.
 """
-function write_model_rows(io::IO, s::SheetStore, f::SheetFormats, styles::StyleIndex, from::Int; display::Bool = true)
+function write_model_rows(io::IO, s::SheetStore, f::SheetFormats, styles::StyleIndex, from::Int; display::Bool = true,
+                          upto::Int = SheetCore.MAX_ROWS, pad::Bool = false)
     bps = Int[]
-    last = SheetCore.MAX_ROWS
+    last = upto
     _row_bounds!(bps, s.rows, from, last)
     _row_bounds!(bps, f.cells, from, last)
     _row_bounds!(bps, f.rows, from, last)
-    isempty(bps) && return from
-    pts = _segment_points(bps, from, maximum(bps) - 1)
+    if isempty(bps)
+        pad || return from
+        _write_empty_rows(io, upto - from + 1)
+        return upto + 1
+    end
+    pts = _segment_points(bps, from, min(maximum(bps) - 1, last))
     next = from
     for k in 1:length(pts)-1
         a = pts[k]; b = pts[k + 1] - 1
@@ -446,6 +452,10 @@ function write_model_rows(io::IO, s::SheetStore, f::SheetFormats, styles::StyleI
         end
         print(io, "</table:table-row>")
         next = b + 1
+    end
+    if pad && next <= upto
+        _write_empty_rows(io, upto - next + 1)
+        next = upto + 1
     end
     return next
 end

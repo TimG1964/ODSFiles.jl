@@ -38,10 +38,12 @@ mutable struct Worksheet
     lock::ReentrantLock
     dirty::Dict{Int,Vector{Int}}      # edited cells of a sheet read from a file: row → columns
     formats::Union{Nothing,SheetFormats}   # read on first use by formatting (phase 4)
+    rowmap::Union{Nothing,IndexMap}   # rows and columns inserted or deleted since the sheet was read
+    colmap::Union{Nothing,IndexMap}   #   (phase 5: original → current lines), or nothing
 end
 
 Worksheet(xf, name, index, entry, visible, store, localnames, lock) =
-    Worksheet(xf, name, index, entry, visible, store, localnames, lock, Dict{Int,Vector{Int}}(), nothing)
+    Worksheet(xf, name, index, entry, visible, store, localnames, lock, Dict{Int,Vector{Int}}(), nothing, nothing, nothing)
 
 # Whether the sheet was made by ODSFiles (so it is written whole), not read from the file.
 isnewsheet(ws::Worksheet) = ws.entry === nothing
@@ -67,14 +69,15 @@ mutable struct ODSFile
     source_io::Union{Nothing,IO}      # the IO a file was opened from, for saveods
     scanner::Union{Nothing,BodyScanner}   # the sheet index, found as far as needed (phase 3)
     lock::ReentrantLock
+    ops::Vector{Any}                  # structural edits since the file was read, in order (phase 5: `RefOp`s)
 end
 
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, false, nothing,
-            nothing, ReentrantLock())
+            nothing, ReentrantLock(), Any[])
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io,
-            nothing, ReentrantLock())
+            nothing, ReentrantLock(), Any[])
 
 #
 # The sheet index is built as far as it is needed: `xf["Sheet1"]` or `xf[1]` finds the first

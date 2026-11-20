@@ -72,6 +72,19 @@ writerow!
 writerows!
 ```
 
+## Rows and columns
+
+Inserting and deleting rows and columns moves every reference to them as LibreOffice moves it:
+formulas on every sheet, defined names, merges, conditional formats, validations, database
+ranges, print ranges, charts and anchored shapes.
+
+```@docs
+insertRows
+insertColumns
+deleteRows
+deleteColumns
+```
+
 ## Formatting
 
 Fonts, fills, borders and alignment:
