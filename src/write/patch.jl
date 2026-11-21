@@ -879,6 +879,17 @@ function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = tru
             push!(splices, (at, at - 1, "<table:database-ranges>" * x * "</table:database-ranges>"))
         end
     end
+    # a flat document's properties (phase 5 step 11): office:meta written again (first, where it has none)
+    if _meta_edited(xf)
+        meta = get(kids, "office:meta", nothing)
+        if meta === nothing
+            at = first(rootspan) + _start_tag_end(SubString(src, first(rootspan), last(rootspan)))
+            push!(splices, (at, at - 1, _meta_element(xf)))
+        else
+            sp = XML.sourcespan(meta)
+            push!(splices, (first(sp), last(sp), _meta_element(xf)))
+        end
+    end
     # a flat document's settings (phase 5): the sheets' entries follow renames, deletes and copies
     setnode = get(kids, "office:settings", nothing)
     if setnode !== nothing && _settings_edited(xf)

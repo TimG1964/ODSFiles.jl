@@ -193,6 +193,19 @@ headerFooterField
 headerFooterFont
 ```
 
+## Document properties
+
+The file's properties and custom properties, kept in meta.xml as LibreOffice keeps them:
+
+```@docs
+setDocumentProperties
+getDocumentProperties
+setCustomProperty
+getCustomProperty
+getCustomProperties
+deleteCustomProperty
+```
+
 ## Formatting
 
 Fonts, fills, borders and alignment:

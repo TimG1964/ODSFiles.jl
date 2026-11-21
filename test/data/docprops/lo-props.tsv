@@ -1,0 +1,69 @@
+own	Title	Own title
+own	Subject	Own subject
+own	Author	Own author
+own	ModifiedBy	Own modifier
+own	Description	Own description
+own	Keywords	[k1][k2]
+own	CreationDate	2026-1-15 9:30:0
+own	ModificationDate	0-0-0 0:0:0
+own	user:Real	Double	2.5
+own	user:Text	String	hello
+own	user:Yes	Boolean	True
+import	Title	The title
+import	Subject	The subject
+import	Author	The creator
+import	ModifiedBy	The modifier
+import	Description	The description
+import	Keywords	[kw1][kw2][kw3]
+import	CreationDate	2026-1-15 9:30:0
+import	ModificationDate	2026-2-20 14:45:10
+import	user:AppVersion	String	16.0300
+import	user:Big	Double	5000000000
+import	user:Company	String	The company
+import	user:Day	Object	2026-3-4 0:0:0
+import	user:Int	Long	42
+import	user:Manager	String	The manager
+import	user:OOXMLCorePropertyCategory	String	The category
+import	user:OOXMLCorePropertyContentStatus	String	The status
+import	user:Real	Double	2.5
+import	user:Text	String	hello
+import	user:When	Object	2026-3-4 5:6:7
+import	user:Yes	Boolean	True
+odsf	Title	The title
+odsf	Subject	The subject
+odsf	Author	The creator
+odsf	ModifiedBy	The modifier
+odsf	Description	The description
+odsf	Keywords	[kw1][kw2][kw3]
+odsf	CreationDate	2026-1-15 9:30:0
+odsf	ModificationDate	2026-2-20 14:45:10
+odsf	user:Big	Double	5000000000
+odsf	user:Company	String	The company
+odsf	user:Day	Object	2026-3-4 0:0:0
+odsf	user:Int	Double	42
+odsf	user:Manager	String	The manager
+odsf	user:OOXMLCorePropertyCategory	String	The category
+odsf	user:OOXMLCorePropertyContentStatus	String	The status
+odsf	user:Real	Double	2.5
+odsf	user:Text	String	hello
+odsf	user:When	Object	2026-3-4 5:6:7
+odsf	user:Yes	Boolean	True
+odsf-new	Title	The title
+odsf-new	Subject	The subject
+odsf-new	Author	The creator
+odsf-new	ModifiedBy	The modifier
+odsf-new	Description	The description
+odsf-new	Keywords	[kw1][kw2][kw3]
+odsf-new	CreationDate	2026-1-15 9:30:0
+odsf-new	ModificationDate	2026-2-20 14:45:10
+odsf-new	user:Big	Double	5000000000
+odsf-new	user:Company	String	The company
+odsf-new	user:Day	Object	2026-3-4 0:0:0
+odsf-new	user:Int	Double	42
+odsf-new	user:Manager	String	The manager
+odsf-new	user:OOXMLCorePropertyCategory	String	The category
+odsf-new	user:OOXMLCorePropertyContentStatus	String	The status
+odsf-new	user:Real	Double	2.5
+odsf-new	user:Text	String	hello
+odsf-new	user:When	Object	2026-3-4 5:6:7
+odsf-new	user:Yes	Boolean	True

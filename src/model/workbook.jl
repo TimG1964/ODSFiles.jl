@@ -96,6 +96,13 @@ mutable struct PageEdits
 end
 PageEdits() = PageEdits(Dict{String,Tuple{String,String}}(), Pair{String,String}[])
 
+# The file's office:meta (phase 5 step 11): its children (tag => XML) in order, read on first use,
+# and whether ODSFiles changed them.
+mutable struct MetaEdits
+    children::Vector{Pair{String,String}}
+    changed::Bool
+end
+
 # The view settings set since the file was read (phase 5 step 8): per sheet (by the sheet, so that
 # they follow renames) and for the whole view; each item's (config:type, value), or `nothing` to remove it.
 const ViewItems = Dict{String,Union{Nothing,Tuple{String,String}}}
@@ -169,14 +176,15 @@ mutable struct ODSFile
     views::ViewEdits                  # view settings set (phase 5)
     wbprotection::Union{Nothing,WorkbookProtection}   # the structure's protection, once read (phase 5 step 9)
     pageedits::PageEdits              # page styles derived (phase 5 step 10)
+    meta::Union{Nothing,MetaEdits}    # the document properties, once read (phase 5 step 11)
 end
 
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, false, nothing,
-            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits(), nothing, PageEdits())
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits(), nothing, PageEdits(), nothing)
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io,
-            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits(), nothing, PageEdits())
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits(), nothing, PageEdits(), nothing)
 
 #
 # The sheet index is built as far as it is needed: `xf["Sheet1"]` or `xf[1]` finds the first

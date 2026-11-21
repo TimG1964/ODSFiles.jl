@@ -90,6 +90,13 @@ The formatting functions work as in XLSX.jl too, with the differences listed in
   told not to scale or align with the margins (`scaleWithDoc`, `alignWithMargins`), as in
   LibreOffice. A sheet without a page style of its own prints LibreOffice's default header and
   footer, and `getHeaderFooter` says so.
+- **Document properties** ([`setDocumentProperties`](@ref), [`setCustomProperty`](@ref) and their
+  getters) take XLSX.jl's arguments, stored in meta.xml as LibreOffice's xlsx import stores them.
+  ODF has no category, content status, company or manager: they are the custom properties the import
+  makes of them (`OOXMLCorePropertyCategory`, `OOXMLCorePropertyContentStatus`, `Company`,
+  `Manager`), which `getCustomProperties` leaves out. Custom numbers are ODF's floats (a whole one
+  is read back as an `Int`), and custom properties are kept in name order, as LibreOffice keeps
+  them. `getCustomProperties` gives a `Vector` of pairs, not an `OrderedDict`.
 - **Not yet available:**
   Excel-style tables, conditional formats, comments, images and charts, and `writetable`'s
   `as_table` and `freeze_header`.

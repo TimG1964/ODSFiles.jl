@@ -18,6 +18,9 @@ function _meta_body()
     now = Dates.format(Dates.now(Dates.UTC), "yyyy-mm-ddTHH:MM:SS")
     return "<office:meta><meta:generator>$(_generator())</meta:generator><meta:creation-date>$now</meta:creation-date></office:meta>"
 end
+# A new file's office:meta, with the document properties set (phase 5 step 11)
+_meta_body(::Nothing) = _meta_body()
+_meta_body(xf::ODSFile) = xf.meta === nothing ? _meta_body() : _meta_element(xf)
 
 function _write_body(io::IO, xf::ODSFile; display::Bool = true)
     print(io, "<office:body><office:spreadsheet", _wb_protection_attrs_xml(xf), ">")   # structure protection (phase 5 step 9)
@@ -105,8 +108,9 @@ function _new_styles(xf::ODSFile, version)
     return new_styles_xml(version, named_styles_xml(xf.styles), ns, fx; autos, masters)
 end
 
-new_meta_xml(version) =
-    string(_XMLDECL, "<office:document-meta", _NS_DECL, " office:version=\"", version, "\">", _meta_body(), "</office:document-meta>")
+new_meta_xml(version) = new_meta_xml(nothing, version)
+new_meta_xml(xf, version) =
+    string(_XMLDECL, "<office:document-meta", _NS_DECL, " office:version=\"", version, "\">", _meta_body(xf), "</office:document-meta>")
 
 function write_new_flat(io::IO, xf::ODSFile, version, mediatype; display::Bool = true)
     svg, faces = _faces(xf)
@@ -114,7 +118,7 @@ function write_new_flat(io::IO, xf::ODSFile, version, mediatype; display::Bool =
     vs = _views_edited(xf) ? _settings_views(xf, "<office:settings></office:settings>") : ""
     vns = isempty(vs) ? "" : " xmlns:config=\"$_CONFIG_NS\" xmlns:ooo=\"$_OOO_NS\""
     print(io, _XMLDECL, "<office:document", _NS_DECL, svg, vns, " office:version=\"", version, "\" office:mimetype=\"", mediatype, "\">",
-          _meta_body(), vs, faces, replace(_STYLES_BODY, "</office:styles>" => named_styles_xml(xf.styles) * "</office:styles>"), "<office:automatic-styles>", added_styles_xml(xf.styles, used_styles(xf)), _table_styles_xml(xf),
+          _meta_body(xf), vs, faces, replace(_STYLES_BODY, "</office:styles>" => named_styles_xml(xf.styles) * "</office:styles>"), "<office:automatic-styles>", added_styles_xml(xf.styles, used_styles(xf)), _table_styles_xml(xf),
           first(_page_styles_xml(xf)), "</office:automatic-styles>")
     pm = last(_page_styles_xml(xf))                            # master pages (phase 5 step 10)
     isempty(pm) || print(io, "<office:master-styles>", pm, "</office:master-styles>")
@@ -163,7 +167,8 @@ function _patched_part_data(xf::ODSFile, name::String, content)
         s = patched_settings(xf, String(copy(b)))
         return codeunits(s) == b ? b : s
     end
-    !isempty(xf.ops) && endswith(name, "/content.xml") && return _rewritten_part(xf, read_bytes(cont, name))
+    name == "meta.xml" && _meta_edited(xf) && return _patched_meta(xf, String(read_bytes(cont, name)))   # phase 5 step 11
+!isempty(xf.ops) && endswith(name, "/content.xml") && return _rewritten_part(xf, read_bytes(cont, name))
     return read_bytes(cont, name)
 end
 
@@ -206,7 +211,10 @@ function _patched_parts(xf::ODSFile; display::Bool = true)
     # a package without settings.xml gets one when views were set (phase 5 step 8)
     _views_edited(xf) && !("settings.xml" in partnames(cont)) &&
         push!(parts, PackagePart("settings.xml", _settings_views(xf, _new_settings_xml(xf.version in WRITABLE_ODF_VERSIONS ? xf.version : DEFAULT_ODF_VERSION))))
-    # a package without styles.xml gets one when it needs named styles
+    # a package without meta.xml gets one when properties were set (phase 5 step 11)
+_meta_edited(xf) && !("meta.xml" in partnames(cont)) &&
+    push!(parts, PackagePart("meta.xml", new_meta_xml(xf, xf.version in WRITABLE_ODF_VERSIONS ? xf.version : DEFAULT_ODF_VERSION)))
+# a package without styles.xml gets one when it needs named styles
     (has_named_styles(xf.styles) || _pages_edited(xf)) && !("styles.xml" in partnames(cont)) && push!(parts, PackagePart("styles.xml", _new_styles(xf, xf.version in WRITABLE_ODF_VERSIONS ? xf.version : DEFAULT_ODF_VERSION)))
     return parts
 end
@@ -243,7 +251,7 @@ function writeods(dest::Union{AbstractString,IO}, xf::ODSFile; overwrite::Bool =
         else
             parts = [PackagePart("content.xml", io -> write_new_content(io, xf, version; display)),
                      PackagePart("styles.xml", _new_styles(xf, version)),
-                     PackagePart("meta.xml", new_meta_xml(version))]
+                     PackagePart("meta.xml", new_meta_xml(xf, version))]
             _views_edited(xf) && push!(parts, PackagePart("settings.xml", _settings_views(xf, _new_settings_xml(version))))
             write_package(dest, parts; mediatype = mt, version)
         end
