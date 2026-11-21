@@ -478,6 +478,8 @@ function _write_table_flat(io::IO, ws::Worksheet; display::Bool = true)
     print(io, "<table:table table:name=\""); _escape_attr(io, ws.name); print(io, '"')
     p = ws.props                                   # a derived table style (phase 5 step 6)
     (p === nothing || p.style === nothing) || (print(io, " table:style-name=\""); _escape_attr(io, p.style); print(io, '"'))
+    pa = ws.print                                  # its print area (phase 5 step 10)
+    (pa === nothing || pa.area === nothing) || (print(io, " table:print-ranges=\""); _escape_attr(io, pa.area); print(io, '"'))
     pr = ws.protection                             # its protection (phase 5 step 9)
     if pr !== nothing
         for k in _PROT_ATTRS

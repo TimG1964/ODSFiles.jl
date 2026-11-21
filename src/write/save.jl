@@ -50,11 +50,14 @@ end
 # (`named`: more named styles for office:styles, as a streamed file's column formats (D-042)
 # or the named styles ODSFiles added (D-045); `ns`: namespace declarations they need; `faces`:
 # the font faces they name)
-new_styles_xml(version, named::AbstractString = "", ns::AbstractString = "", faces::AbstractString = "") =
+new_styles_xml(version, named::AbstractString = "", ns::AbstractString = "", faces::AbstractString = "";
+               autos::AbstractString = "", masters::AbstractString = "") =
     string(_XMLDECL, "<office:document-styles", _NS_DECL, ns, " office:version=\"", version, "\">",
            isempty(faces) ? "" : "<office:font-face-decls>$faces</office:font-face-decls>",
            replace(_STYLES_BODY, "</office:styles>" => named * "</office:styles>"),
-           "<office:automatic-styles/><office:master-styles/></office:document-styles>")
+           isempty(autos) ? "<office:automatic-styles/>" : "<office:automatic-styles>" * autos * "</office:automatic-styles>",
+           isempty(masters) ? "<office:master-styles/>" : "<office:master-styles>" * masters * "</office:master-styles>",
+           "</office:document-styles>")
 
 """
     used_styles(xf) -> Union{UsedStyles, Nothing}
@@ -98,7 +101,8 @@ end
 function _new_styles(xf::ODSFile, version)
     fx = faces_xml(_named_faces(xf.styles))
     ns = (isempty(fx) ? "" : " xmlns:svg=\"$_SVG_NS\"") * (_needs_loext(xf.styles) ? " xmlns:loext=\"$_LOEXT_NS\"" : "")
-    return new_styles_xml(version, named_styles_xml(xf.styles), ns, fx)
+    autos, masters = _page_styles_xml(xf)                     # page styles (phase 5 step 10)
+    return new_styles_xml(version, named_styles_xml(xf.styles), ns, fx; autos, masters)
 end
 
 new_meta_xml(version) =
@@ -111,7 +115,9 @@ function write_new_flat(io::IO, xf::ODSFile, version, mediatype; display::Bool =
     vns = isempty(vs) ? "" : " xmlns:config=\"$_CONFIG_NS\" xmlns:ooo=\"$_OOO_NS\""
     print(io, _XMLDECL, "<office:document", _NS_DECL, svg, vns, " office:version=\"", version, "\" office:mimetype=\"", mediatype, "\">",
           _meta_body(), vs, faces, replace(_STYLES_BODY, "</office:styles>" => named_styles_xml(xf.styles) * "</office:styles>"), "<office:automatic-styles>", added_styles_xml(xf.styles, used_styles(xf)), _table_styles_xml(xf),
-          "</office:automatic-styles>")
+          first(_page_styles_xml(xf)), "</office:automatic-styles>")
+    pm = last(_page_styles_xml(xf))                            # master pages (phase 5 step 10)
+    isempty(pm) || print(io, "<office:master-styles>", pm, "</office:master-styles>")
     _write_body(io, xf; display)
     print(io, "</office:document>")
     return nothing
@@ -151,7 +157,7 @@ end
 function _patched_part_data(xf::ODSFile, name::String, content)
     cont = xf.container
     name == "content.xml" && return content
-    name == "styles.xml" && has_named_styles(xf.styles) && return patched_styles(xf, String(read_bytes(cont, name)))
+    name == "styles.xml" && (has_named_styles(xf.styles) || _pages_edited(xf)) && return patched_styles(xf, String(read_bytes(cont, name)))
     if name == "settings.xml" && _settings_edited(xf)
         b = read_bytes(cont, name)
         s = patched_settings(xf, String(copy(b)))
@@ -201,7 +207,7 @@ function _patched_parts(xf::ODSFile; display::Bool = true)
     _views_edited(xf) && !("settings.xml" in partnames(cont)) &&
         push!(parts, PackagePart("settings.xml", _settings_views(xf, _new_settings_xml(xf.version in WRITABLE_ODF_VERSIONS ? xf.version : DEFAULT_ODF_VERSION))))
     # a package without styles.xml gets one when it needs named styles
-    has_named_styles(xf.styles) && !("styles.xml" in partnames(cont)) && push!(parts, PackagePart("styles.xml", _new_styles(xf, xf.version in WRITABLE_ODF_VERSIONS ? xf.version : DEFAULT_ODF_VERSION)))
+    (has_named_styles(xf.styles) || _pages_edited(xf)) && !("styles.xml" in partnames(cont)) && push!(parts, PackagePart("styles.xml", _new_styles(xf, xf.version in WRITABLE_ODF_VERSIONS ? xf.version : DEFAULT_ODF_VERSION)))
     return parts
 end
 

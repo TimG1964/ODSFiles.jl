@@ -373,6 +373,11 @@ end
 # operation happened (the end-of-sheet rule of F-043 needs it).
 function _rewrite_model_refs!(xf::ODSFile, op::RefOp)
     for ws in _sheets(xf)
+        # a print area set by ODSFiles (phase 5 step 10): the file's are replayed with the text
+        pa = ws.print
+        if pa !== nothing && pa.area_changed && pa.area !== nothing
+            pa.area = rewrite_rangelist(pa.area, op, RefContext(ws.name))
+        end
         s = _cached_store(ws)
         for i in eachindex(s.rows)
             rd = s.rows[i]
@@ -523,6 +528,7 @@ function shift_lines!(ws::Worksheet, axis::Int, at::Int, n::Int)
     end
     n > 0 && _format_new_lines!(s, f, axis, at, n)
     _shift_sheet_groups!(f, axis, at, n, maxl)        # groups (phase 5 step 7, F-052)
+    _shift_titles!(f, axis, at, n, maxl)              # print titles (step 10)
     merged = _shift_merges!(s, f, axis, at, n)
     s.stale = true
     # what the patched save needs

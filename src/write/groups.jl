@@ -92,8 +92,21 @@ function _shift_sheet_groups!(f::SheetFormats, axis::Int, at::Int, n::Int, maxl:
     gs = axis == 1 ? f.rowgroups : f.colgroups
     isempty(gs) && return
     new = _shift_groups(gs, at, n, maxl)
+    new == gs && return                         # untouched: the containers stay as they are
     axis == 1 ? (f.rowgroups = new) : (f.colgroups = new)
     f.groups_touched = true                     # their containers are written again
+    return
+end
+
+# Print titles through an insert or delete: as a group (phase 5 step 10).
+function _shift_titles!(f::SheetFormats, axis::Int, at::Int, n::Int, maxl::Int)
+    tr = axis == 1 ? f.title_rows : f.title_cols
+    tr === nothing && return
+    g = _shift_groups([LineGroup(first(tr), last(tr), 1, true)], at, n, maxl)
+    new = isempty(g) ? nothing : g[1].first:g[1].last
+    new == tr && return
+    axis == 1 ? (f.title_rows = new) : (f.title_cols = new)
+    f.groups_touched = true
     return
 end
 
@@ -201,7 +214,8 @@ getColumnOutlineLevel(xf::ODSFile, ref::AbstractString) = getColumnOutlineLevel(
 #
 
 _groups_touched(ws::Worksheet) = ws.formats !== nothing && ws.formats.groups_touched
-_has_groups(f::Union{Nothing,SheetFormats}) = f !== nothing && !(isempty(f.rowgroups) && isempty(f.colgroups))
+_has_groups(f::Union{Nothing,SheetFormats}) = f !== nothing && !(isempty(f.rowgroups) && isempty(f.colgroups) &&
+                                                                 f.title_rows === nothing && f.title_cols === nothing)
 
 # Writes a table through `write` into a string, then its groups' containers.
 function _with_groups(write::Function, out::IO, f::SheetFormats)
@@ -212,8 +226,12 @@ function _with_groups(write::Function, out::IO, f::SheetFormats)
 end
 
 const _GROUP_TAGS = ("table:table-row-group", "table:table-column-group")
-const _ATOMIC_ROWS = ("table:table-header-rows", "table:table-rows")
-const _ATOMIC_COLS = ("table:table-header-columns", "table:table-columns")
+# Containers the rebuilt groups replace too: the print titles' (rebuilt from the sheet's titles, phase 5
+# step 10) and plain `table:table-rows`/`-columns`.
+const _OTHER_CONTAINERS = ("table:table-header-rows", "table:table-rows", "table:table-header-columns", "table:table-columns")
+const _TITLE_DEPTH = 1000                     # the print titles, as the innermost group
+_title_tag(k::Int) = k == 1 ? "table:table-header-rows" : "table:table-header-columns"
+_close_tag(k::Int, g::LineGroup) = g.depth == _TITLE_DEPTH ? _title_tag(k) : _GROUP_TAGS[k]
 
 mutable struct _Regroup
     t::String
@@ -228,6 +246,7 @@ end
 _copy!(st::_Regroup, upto::Int) = (upto >= st.pos && print(st.out, SubString(st.t, st.pos, upto)); st.pos = max(st.pos, upto + 1))
 
 function _group_tag(k::Int, g::LineGroup)
+    g.depth == _TITLE_DEPTH && return "<" * _title_tag(k) * ">"
     tag = _GROUP_TAGS[k]
     return g.display ? "<$tag>" : "<$tag table:display=\"false\">"
 end
@@ -236,8 +255,8 @@ end
 function _boundary!(st::_Regroup, k::Int, p::Int)
     op = st.opened[k]
     while !isempty(op) && op[end].last < p
-        pop!(op)
-        print(st.out, "</", _GROUP_TAGS[k], '>')
+        g = pop!(op)
+        print(st.out, "</", _close_tag(k, g), '>')
     end
     for g in st.groups[k]                    # sorted by first line, outermost first
         g.first == p && (push!(op, g); print(st.out, _group_tag(k, g)))
@@ -313,8 +332,9 @@ function _regroup_children!(st::_Regroup, c)
         ln = XML.LazyNode(ch)
         sp = XML.sourcespan(ln)
         _copy!(st, first(sp) - 1)                # the text before it, as it was
-        if tg in _GROUP_TAGS
+        if tg in _GROUP_TAGS || tg in _OTHER_CONTAINERS
             # the old container goes: the text between its children is kept
+            (tg in ("table:table-header-rows", "table:table-rows")) && _finish!(st, 2)
             text = SubString(st.t, first(sp), last(sp))
             st.pos = first(sp) + _start_tag_end(text)
             if !endswith(text, "/>")
@@ -332,22 +352,6 @@ function _regroup_children!(st::_Regroup, c)
                       SubString(text, 1, _start_tag_end(text)))
             _emit_lines!(st, k, text, r === nothing ? 1 : parse(Int, r.captures[1]))
             st.pos = last(sp) + 1
-        elseif tg in _ATOMIC_ROWS || tg in _ATOMIC_COLS
-            k = tg in _ATOMIC_ROWS ? 1 : 2
-            k == 1 && _finish!(st, 2)
-            text = SubString(st.t, first(sp), last(sp))
-            n = _lines_in(ln, k)
-            a = st.n[k] + 1
-            b = st.n[k] + n
-            for g in st.groups[k]
-                ((a < g.first <= b) || (a <= g.last < b)) &&
-                    throw(ODSError("A group of $(k == 1 ? "rows" : "columns") can't start or end inside the print-title " *
-                                   "$(k == 1 ? "rows" : "columns") ($a:$b)."))
-            end
-            _boundary!(st, k, a)
-            print(st.out, text)
-            st.n[k] = b
-            st.pos = last(sp) + 1
         else
             # anything else: the lines of a kind end before it
             st.n[1] > 0 && _finish!(st, 1)
@@ -361,14 +365,29 @@ end
 """
     _regroup(t, f) -> String
 
-A table's text `t` with its group containers rebuilt from the groups in `f`.
+A table's text `t` with its group containers, and its print titles' header containers, rebuilt from
+`f`. The titles are the innermost container: inside a group or apart from it, never holding one
+(ODF's header rows hold rows only).
 """
 function _regroup(t::String, f::SheetFormats)
+    kinds = Vector{LineGroup}[]
+    for (k, gs, tr) in ((1, f.rowgroups, f.title_rows), (2, f.colgroups, f.title_cols))
+        v = copy(gs)
+        if tr !== nothing
+            for g in gs
+                (_holds(g, first(tr), last(tr)) || !_meets(g, first(tr), last(tr))) ||
+                    throw(ODSError("The print-title $(k == 1 ? "rows" : "columns") $tr cross the group $(g.first):$(g.last): " *
+                                   "in ODF they must lie inside a group or apart from it."))
+            end
+            push!(v, LineGroup(first(tr), last(tr), _TITLE_DEPTH, true))
+        end
+        push!(kinds, sort!(v; by = g -> (g.first, g.depth)))
+    end
     c = XML.Cursor(t)
     while XML.next!(c) !== nothing
         XML.nodetype(c) === XML.Element && break
     end
-    st = _Regroup(t, IOBuffer(sizehint = ncodeunits(t) + 256), 1, [0, 0], [f.rowgroups, f.colgroups],
+    st = _Regroup(t, IOBuffer(sizehint = ncodeunits(t) + 256), 1, [0, 0], kinds,
                   [LineGroup[], LineGroup[]], [false, false])
     _regroup_children!(st, c)
     _finish!(st, 2)

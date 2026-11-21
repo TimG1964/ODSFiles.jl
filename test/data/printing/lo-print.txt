@@ -1,0 +1,199 @@
+Plain: master page PageStyle_5f_Plain, layout pm6
+    header-footer-properties/fo:margin-bottom = 0.25cm
+    header-footer-properties/fo:margin-left = 0cm
+    header-footer-properties/fo:margin-right = 0cm
+    header-footer-properties/fo:margin-top = 0.25cm
+    header-footer-properties/fo:min-height = 0.75cm
+    page-layout-properties/fo:margin-bottom = 1.905cm
+    page-layout-properties/fo:margin-left = 1.778cm
+    page-layout-properties/fo:margin-right = 1.778cm
+    page-layout-properties/fo:margin-top = 1.905cm
+    page-layout-properties/style:first-page-number = continue
+    page-layout-properties/style:num-format = 1
+    page-layout-properties/style:print = charts drawings objects zero-values
+    page-layout-properties/style:print-orientation = portrait
+    page-layout-properties/style:print-page-order = ttb
+    page-layout-properties/style:scale-to = 100%
+    page-layout-properties/style:writing-mode = lr-tb
+    master: 
+   <style:header style:display="false"/><style:header-left style:display="false"/><style:header-first style:display="false"/><style:footer style:display="false"/><style:footer-left style:display="false"/><style:footer-first style:display="false"/>
+  
+
+Landscape: master page PageStyle_5f_Landscape, layout pm5
+    page-layout-properties/fo:page-height = 21.59cm
+    page-layout-properties/fo:page-width = 27.94cm
+    page-layout-properties/style:print-orientation = landscape
+
+A4: master page PageStyle_5f_A4, layout pm12
+    page-layout-properties/fo:page-height = 29.7cm
+    page-layout-properties/fo:page-width = 21.001cm
+
+Letter: master page PageStyle_5f_Letter, layout pm14
+    page-layout-properties/fo:page-height = 27.94cm
+    page-layout-properties/fo:page-width = 21.59cm
+
+Legal: master page PageStyle_5f_Legal, layout pm10
+    page-layout-properties/fo:page-height = 35.56cm
+    page-layout-properties/fo:page-width = 21.59cm
+
+A3: master page PageStyle_5f_A3, layout pm3
+    page-layout-properties/fo:page-height = 42cm
+    page-layout-properties/fo:page-width = 29.7cm
+
+A5: master page PageStyle_5f_A5, layout pm20
+    page-layout-properties/fo:page-height = 21.001cm
+    page-layout-properties/fo:page-width = 14.801cm
+
+B5: master page PageStyle_5f_B5, layout pm7
+    page-layout-properties/fo:page-height = 25.7cm
+    page-layout-properties/fo:page-width = 18.2cm
+
+Tabloid: master page PageStyle_5f_Tabloid, layout pm9
+    page-layout-properties/fo:page-height = 43.18cm
+    page-layout-properties/fo:page-width = 27.94cm
+
+Executive: master page PageStyle_5f_Executive, layout pm4
+    page-layout-properties/fo:page-height = 26.67cm
+    page-layout-properties/fo:page-width = 18.415cm
+
+Ledger: master page PageStyle_5f_Ledger, layout pm18
+    page-layout-properties/fo:page-height = 27.94cm
+    page-layout-properties/fo:page-width = 43.18cm
+
+B4: master page PageStyle_5f_B4, layout pm15
+    page-layout-properties/fo:page-height = 36.4cm
+    page-layout-properties/fo:page-width = 25.7cm
+
+LandA4: master page PageStyle_5f_LandA4, layout pm8
+    page-layout-properties/fo:page-height = 21.001cm
+    page-layout-properties/fo:page-width = 29.7cm
+    page-layout-properties/style:print-orientation = landscape
+
+CenterH: master page PageStyle_5f_CenterH, layout pm26
+    page-layout-properties/style:table-centering = horizontal
+
+CenterV: master page PageStyle_5f_CenterV, layout pm23
+    page-layout-properties/style:table-centering = vertical
+
+Paper70: master page PageStyle_5f_Paper70, layout pm13
+    page-layout-properties/fo:page-height = 14.801cm
+    page-layout-properties/fo:page-width = 10.5cm
+
+Scale80: master page PageStyle_5f_Scale80, layout pm22
+    page-layout-properties/fo:page-height = 27.94cm
+    page-layout-properties/fo:page-width = 21.59cm
+    page-layout-properties/style:scale-to = 80%
+
+FitW1: master page PageStyle_5f_FitW1, layout pm25
+    page-layout-properties/fo:page-height = 27.94cm
+    page-layout-properties/fo:page-width = 21.59cm
+    page-layout-properties/style:scale-to-X = 1
+    page-layout-properties/style:scale-to (removed)
+
+FitW2H3: master page PageStyle_5f_FitW2H3, layout pm21
+    page-layout-properties/fo:page-height = 27.94cm
+    page-layout-properties/fo:page-width = 21.59cm
+    page-layout-properties/style:scale-to-X = 2
+    page-layout-properties/style:scale-to-Y = 3
+    page-layout-properties/style:scale-to (removed)
+
+Margins: master page PageStyle_5f_Margins, layout pm11
+    page-layout-properties/fo:margin-bottom = 0.635cm
+    page-layout-properties/fo:margin-left = 1.27cm
+    page-layout-properties/fo:margin-right = 3.175cm
+    page-layout-properties/fo:margin-top = 2.54cm
+
+Grid: master page PageStyle_5f_Grid, layout pm24
+    page-layout-properties/style:print = charts drawings grid objects zero-values
+
+Headings: master page PageStyle_5f_Headings, layout pm16
+    page-layout-properties/style:print = charts drawings headers objects zero-values
+
+Centered: master page PageStyle_5f_Centered, layout pm17
+    page-layout-properties/style:table-centering = both
+
+Area: master page PageStyle_5f_Area, layout pm6
+    table:print-ranges = Area.B2:Area.D8
+
+Areas: master page PageStyle_5f_Areas, layout pm6
+    table:print-ranges = Areas.A1:Areas.B4 Areas.D6:Areas.E9
+
+TitleRows: master page PageStyle_5f_TitleRows, layout pm6
+    containers: table-header-rows
+
+TitleCols: master page PageStyle_5f_TitleCols, layout pm6
+    containers: table-header-columns
+
+TitleBoth: master page PageStyle_5f_TitleBoth, layout pm6
+    containers: table-header-columns, table-header-rows
+
+HFCenter: master page PageStyle_5f_HFCenter, layout pm19
+    header-footer-properties/fo:margin-bottom = 0.72cm
+    header-footer-properties/fo:margin-top = 0.72cm
+    header-footer-properties/fo:min-height = 1.143cm
+    page-layout-properties/fo:margin-bottom = 0.762cm
+    page-layout-properties/fo:margin-top = 0.762cm
+    master: 
+   <style:header><text:p><text:span text:style-name="T1">Report</text:span></text:p></style:header><style:header-left style:display="false"/><style:header-first style:display="false"/><style:footer><text:p><text:span text:style-name="T1">Page </text:span><text:span text:style-name="T1"><text:page-number>1</text:page-number></text:span><text:span text:style-name="T1"><text:s/>of </text:span><text:span text:style-name="T1"><text:page-count>99</text:page-count></text:span></text:p></style:footer><style:footer-left style:display="false"/><style:footer-first style:display="false"/>
+  
+
+HFSections: master page PageStyle_5f_HFSections, layout pm19
+    header-footer-properties/fo:margin-bottom = 0.72cm
+    header-footer-properties/fo:margin-top = 0.72cm
+    header-footer-properties/fo:min-height = 1.143cm
+    page-layout-properties/fo:margin-bottom = 0.762cm
+    page-layout-properties/fo:margin-top = 0.762cm
+    master: 
+   <style:header>[left]<text:p><text:span text:style-name="T1">L </text:span><text:span text:style-name="T1"><text:date style:data-style-name="N2" text:date-value="2026-11-20">00/00/0000</text:date></text:span></text:p></style:region-left>[center]<text:p><text:span text:style-name="T1">C </text:span><text:span text:style-name="T1"><text:time style:data-style-name="N2" text:time-value="23:26:55.401851200">00:00:00</text:time></text:span></text:p></style:region-center>[right]<text:p><text:span text:style-name="T1">R </text:span><text:span text:style-name="T1"><text:sheet-name>???</text:sheet-name></text:span></text:p></style:region-right></style:header><style:header-left style:display="false"/><style:header-first style:display="false"/><style:footer>[left]<text:p><text:span text:style-name="T1"><text:file-name text:display="name-and-extension">???</text:file-name></text:span></text:p></style:region-left>[right]<text:p><text:span text:style-name="T1"><text:file-name text:display="full">???</text:file-name></text:span></text:p></style:region-right></style:footer><style:footer-left style:display="false"/><style:footer-first style:display="false"/>
+  
+
+HFFonts: master page PageStyle_5f_HFFonts, layout pm29
+    header-footer-properties/fo:margin-bottom = 0.649cm
+    header-footer-properties/fo:margin-top = 0.72cm
+    header-footer-properties/fo:min-height = 1.143cm
+    page-layout-properties/fo:margin-bottom = 0.762cm
+    page-layout-properties/fo:margin-top = 0.762cm
+    master: 
+   <style:header><text:p><text:span text:style-name="T2">Big</text:span><text:span text:style-name="T3"> red</text:span></text:p></style:header><style:header-left style:display="false"/><style:header-first style:display="false"/><style:footer>[left]<text:p><text:span text:style-name="T4">under</text:span><text:span text:style-name="T1"></text:span><text:span text:style-name="T5">strike</text:span><text:span text:style-name="T1"></text:span><text:span text:style-name="T6">2</text:span></text:p></style:region-left></style:footer><style:footer-left style:display="false"/><style:footer-first style:display="false"/>
+  
+
+HFFirst: master page PageStyle_5f_HFFirst, layout pm28
+    header-footer-properties/fo:margin-bottom = 0.72cm
+    page-layout-properties/fo:margin-top = 0.762cm
+    master: 
+   <style:header><text:p><text:span text:style-name="T1">All</text:span></text:p></style:header><style:header-left style:display="false"/><style:header-first><text:p><text:span text:style-name="T1">First</text:span></text:p></style:header-first><style:footer style:display="false"/><style:footer-left style:display="false"/><style:footer-first style:display="false"/>
+  
+
+HFEven: master page PageStyle_5f_HFEven, layout pm19
+    header-footer-properties/fo:margin-bottom = 0.72cm
+    header-footer-properties/fo:margin-top = 0.72cm
+    header-footer-properties/fo:min-height = 1.143cm
+    page-layout-properties/fo:margin-bottom = 0.762cm
+    page-layout-properties/fo:margin-top = 0.762cm
+    master: 
+   <style:header><text:p><text:span text:style-name="T1">Odd</text:span></text:p></style:header><style:header-left><text:p><text:span text:style-name="T1">Even</text:span></text:p></style:header-left><style:header-first style:display="false"/><style:footer><text:p><text:span text:style-name="T1">o</text:span></text:p></style:footer><style:footer-left><text:p><text:span text:style-name="T1">e</text:span></text:p></style:footer-left><style:footer-first style:display="false"/>
+  
+
+HFAmp: master page PageStyle_5f_HFAmp, layout pm28
+    header-footer-properties/fo:margin-bottom = 0.72cm
+    page-layout-properties/fo:margin-top = 0.762cm
+    master: 
+   <style:header><text:p><text:span text:style-name="T1">A &amp; B</text:span></text:p></style:header><style:header-left style:display="false"/><style:header-first style:display="false"/><style:footer style:display="false"/><style:footer-left style:display="false"/><style:footer-first style:display="false"/>
+  
+
+HFOpts: master page PageStyle_5f_HFOpts, layout pm28
+    header-footer-properties/fo:margin-bottom = 0.72cm
+    page-layout-properties/fo:margin-top = 0.762cm
+    master: 
+   <style:header><text:p><text:span text:style-name="T1">X</text:span></text:p></style:header><style:header-left style:display="false"/><style:header-first style:display="false"/><style:footer style:display="false"/><style:footer-left style:display="false"/><style:footer-first style:display="false"/>
+  
+
+HFMargins: master page PageStyle_5f_HFMargins, layout pm27
+    header-footer-properties/fo:margin-bottom = 2.117cm
+    header-footer-properties/fo:margin-top = 1.101cm
+    header-footer-properties/fo:min-height = 1.524cm
+    page-layout-properties/fo:margin-bottom = 1.524cm
+    page-layout-properties/fo:margin-top = 1.27cm
+    master: 
+   <style:header><text:p><text:span text:style-name="T1">H</text:span></text:p></style:header><style:header-left style:display="false"/><style:header-first style:display="false"/><style:footer><text:p><text:span text:style-name="T1">F</text:span></text:p></style:footer><style:footer-left style:display="false"/><style:footer-first style:display="false"/>
+  

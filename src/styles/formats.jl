@@ -93,9 +93,12 @@ mutable struct SheetFormats
     rowgroups::Vector{LineGroup}
     colgroups::Vector{LineGroup}
     groups_touched::Bool
+    # phase 5 step 10: the print titles (`table:table-header-rows`, `-columns`), or nothing
+    title_rows::Union{Nothing,UnitRange{Int}}
+    title_cols::Union{Nothing,UnitRange{Int}}
 end
 SheetFormats() = SheetFormats(RowData[], ColFormat[], RowFormat[], false, UnitRange{Int}[],
-                              Tuple{UnitRange{Int},UnitRange{Int}}[], LineGroup[], LineGroup[], false)
+                              Tuple{UnitRange{Int},UnitRange{Int}}[], LineGroup[], LineGroup[], false, nothing, nothing)
 
 # Whether formats changed since the sheet was read.
 _formats_touched(f::SheetFormats) = f.cols_touched || !isempty(f.rows_touched) || !isempty(f.rects) || f.groups_touched
@@ -208,11 +211,15 @@ function read_formats(node::XML.LazyNode{String}, styles::StyleIndex, store::She
     nextrow = 1
     runs = CellRun[]
     open = Tuple{Int,Int,Bool,Bool}[]     # groups being read: (depth in the XML, first line, rows?, display)
-    endgroups!(d) = while !isempty(open) && open[end][1] >= d
+    endgroups!(d) = while !isempty(open) && abs(open[end][1]) >= d
         xd, a, isrow, disp = pop!(open)
         last = isrow ? nextrow - 1 : (isempty(f.cols) ? 0 : _stop(f.cols[end]))
-        depth = count(g -> g[3] == isrow, open) + 1
-        last >= a && push!(isrow ? f.rowgroups : f.colgroups, LineGroup(a, last, depth, disp))
+        if xd < 0                # the print titles (the depth is kept negative)
+            last >= a && (isrow ? (f.title_rows = a:last) : (f.title_cols = a:last))
+        else
+            depth = count(g -> g[3] == isrow && g[1] > 0, open) + 1
+            last >= a && push!(isrow ? f.rowgroups : f.colgroups, LineGroup(a, last, depth, disp))
+        end
     end
     while XML.next!(c) !== nothing && XML.depth(c) > 1
         XML.nodetype(c) === XML.Element || continue
@@ -225,6 +232,11 @@ function read_formats(node::XML.LazyNode{String}, styles::StyleIndex, store::She
                 k == "table:display" && (disp = v != "false")
             end
             push!(open, (XML.depth(c), isrow ? nextrow : (isempty(f.cols) ? 1 : _stop(f.cols[end]) + 1), isrow, disp))
+            continue
+        end
+        if t == "table:table-header-rows" || t == "table:table-header-columns"
+            isrow = t == "table:table-header-rows"
+            push!(open, (-XML.depth(c), isrow ? nextrow : (isempty(f.cols) ? 1 : _stop(f.cols[end]) + 1), isrow, true))
             continue
         end
         if t == "table:table-row"

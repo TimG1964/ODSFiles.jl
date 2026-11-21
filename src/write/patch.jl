@@ -614,16 +614,18 @@ function _table_start_tag(ws::Worksheet, rw::Union{Nothing,RefRewriter}, src::St
     end
     changed = _props_changed(ws)                   # its table style (phase 5 step 6)
     prot = _prot_changed(ws)                       # its protection (phase 5 step 9)
-    ws.name == ws.entry.name && !changed && !prot && return tag
+    area = _area_changed(ws)                       # its print area (phase 5 step 10)
+    ws.name == ws.entry.name && !changed && !prot && !area && return tag
     ch = Pair{String,Union{Nothing,String}}[]
     ws.name == ws.entry.name || push!(ch, "table:name" => _escape_attr(ws.name))
     changed && push!(ch, "table:style-name" => (ws.props.style === nothing ? nothing : _escape_attr(ws.props.style)))
     prot && append!(ch, _protection_changes(ws.protection))
+    area && push!(ch, "table:print-ranges" => (ws.print.area === nothing ? nothing : _escape_attr(ws.print.area)))
     return _set_attrs(tag, ch; open = true)
 end
 
 # Whether a sheet's start tag changes (phase 5).
-_start_tag_changed(ws::Worksheet) = ws.name != ws.entry.name || _props_changed(ws) || _prot_changed(ws)
+_start_tag_changed(ws::Worksheet) = ws.name != ws.entry.name || _props_changed(ws) || _prot_changed(ws) || _area_changed(ws)
 
 # A sheet's protection options, when its protection changed: (the span of the text's element, or an
 # empty range where it goes, after the start tag ending at `e`; its new XML).
@@ -906,7 +908,12 @@ function write_patched_content(out::_ChunkedIO, xf::ODSFile; display::Bool = tru
                                                 for k in _WB_PROT_ATTRS]
         push!(splices, (first(r), last(r), _set_attrs(tag, ch; open = !endswith(tag, "/>"))))
     end
-    sx = added_styles_xml(xf.styles, used_styles(xf)) * _table_styles_xml(xf)     # table styles: phase 5 step 6
+    pautos, pmasters = _page_styles_xml(xf)                                       # page styles: phase 5 step 10
+    if xf.container.format === :fods && !isempty(pmasters)
+        _append_splice!(splices, src, get(kids, "office:master-styles", nothing), "office:master-styles", pmasters, body)
+    end
+    sx = added_styles_xml(xf.styles, used_styles(xf)) * _table_styles_xml(xf) *  # table styles: phase 5 step 6
+         (xf.container.format === :fods ? pautos : "")
     if !isempty(sx)
         _append_splice!(splices, src, autostyles, "office:automatic-styles", sx, body)
     end
@@ -937,6 +944,22 @@ function patched_styles(xf::ODSFile, xml::AbstractString)
     stylesnode = get(kids, "office:styles", nothing)
     after = something(get(kids, "office:automatic-styles", nothing), get(kids, "office:master-styles", nothing), Some(nothing))
     isempty(fx) || _append_splice!(splices, src, decls, "office:font-face-decls", fx, something(stylesnode, after, Some(nothing)))
+    # page styles (phase 5 step 10): page layouts and text styles in the automatic styles, master pages
+    pautos, pmasters = _page_styles_xml(xf)
+    rootend = first(findlast("</", SubString(src, first(rootspan), last(rootspan)))) + first(rootspan) - 1
+    autos = get(kids, "office:automatic-styles", nothing)
+    masters = get(kids, "office:master-styles", nothing)
+    if !isempty(pautos)
+        autos === nothing ? push!(splices, (something(masters === nothing ? nothing : first(XML.sourcespan(masters)), rootend),
+                                            something(masters === nothing ? nothing : first(XML.sourcespan(masters)), rootend) - 1,
+                                            "<office:automatic-styles>" * pautos * "</office:automatic-styles>")) :
+            _append_splice!(splices, src, autos, "office:automatic-styles", pautos, nothing)
+    end
+    if !isempty(pmasters)
+        masters === nothing ? push!(splices, (rootend, rootend - 1, "<office:master-styles>" * pmasters * "</office:master-styles>")) :
+            _append_splice!(splices, src, masters, "office:master-styles", pmasters, nothing)
+    end
+    has_named_styles(xf.styles) || return _apply_splices(src, splices)
     if stylesnode === nothing && after === nothing
         # a styles.xml with nothing but its root: the styles go before its end tag
         at = first(findlast("</", SubString(src, first(rootspan), last(rootspan)))) + first(rootspan) - 1

@@ -163,35 +163,44 @@ function _table_style_props(x::Union{Nothing,String})
     return (d != "false", c === nothing ? nothing : lowercase(c), w !== nothing && startswith(w, "rl"))
 end
 
+# The master page a table style's XML names, or nothing.
+_table_style_master(x::Union{Nothing,String}) = x === nothing ? nothing : _start_tag_attr(SubString(x, 1, _start_tag_end(x)), "style:master-page-name")
+
 # A sheet's properties, read on first use.
 function _sheet_props(ws::Worksheet)
     ws.props === nothing || return ws.props
     name = _table_style_name(ws)
-    d, c, rtl = _table_style_props(name === nothing ? nothing : _table_style_xml(get_odsfile(ws), name))
-    ws.props = SheetProps(d, c, rtl, name, name)
+    x = name === nothing ? nothing : _table_style_xml(get_odsfile(ws), name)
+    d, c, rtl = _table_style_props(x)
+    ws.props = SheetProps(d, c, rtl, _table_style_master(x), name, name)
     return ws.props
 end
 
 # The table style with these properties: the sheet's own if it has them, else one derived from it
-# (reused when one with the same XML exists).
-function _restyle_table!(ws::Worksheet, display::Bool, color::Union{Nothing,String}; rtl::Bool = _sheet_props(ws).rtl)
+# (reused when one with the same XML exists). `master`: the master page it names (phase 5 step 10).
+function _restyle_table!(ws::Worksheet, display::Bool, color::Union{Nothing,String}; rtl::Bool = _sheet_props(ws).rtl,
+                         master::Union{Nothing,String} = _sheet_props(ws).master)
     xf = get_odsfile(ws)
     p = _sheet_props(ws)
     base = p.base
-    bd, bc, br = _table_style_props(base === nothing ? nothing : _table_style_xml(xf, base))
+    bx = base === nothing ? nothing : _table_style_xml(xf, base)
+    bd, bc, br = _table_style_props(bx)
+    bm = _table_style_master(bx)
     p.display = display
     p.tabcolor = color
     p.rtl = rtl
-    if base !== nothing && bd == display && bc == color && br == rtl
+    p.master = master
+    if base !== nothing && bd == display && bc == color && br == rtl && bm == master
         p.style = base                                   # back as it was: the text's own style
         return
     end
-    if base === nothing && display && color === nothing && !rtl
+    if base === nothing && display && color === nothing && !rtl && master === nothing
         p.style = nothing
         return
     end
-    x = base === nothing ? nothing : _table_style_xml(xf, base)
+    x = bx
     x === nothing && (x = "<style:style style:name=\"\" style:family=\"table\"><style:table-properties/></style:style>")
+    master == bm || (x = _set_attrs(x, Pair{String,Union{Nothing,String}}["style:master-page-name" => master === nothing ? nothing : _escape_attr(master)]))
     r = findfirst(_TABLE_PROPS_RX, x)
     if r === nothing
         e = _start_tag_end(x)

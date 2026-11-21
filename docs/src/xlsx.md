@@ -81,6 +81,15 @@ The formatting functions work as in XLSX.jl too, with the differences listed in
   ASCII characters. LibreOffice has no permission to format, sort, insert hyperlinks or edit
   objects and scenarios on a protected sheet, and no window protection: asking for them is an
   error.
+- **Printing** ([`setPageSetup`](@ref), [`setPageMargins`](@ref), [`setPrintOptions`](@ref),
+  [`setPrintArea`](@ref), [`setPrintTitles`](@ref), [`setHeaderFooter`](@ref) and their getters)
+  takes XLSX.jl's arguments, Excel's header codes included, and stores everything as
+  LibreOffice's xlsx import stores it: a page style of the sheet's own (`PageStyle_<sheet>`), ODF
+  fields and text styles for the codes, `table:print-ranges` and header-row containers. Paper sizes
+  are those the import knows (Excel's 1, 3, 4, 5, 7, 8, 9, 11, 12, 13 and 70); headers can't be
+  told not to scale or align with the margins (`scaleWithDoc`, `alignWithMargins`), as in
+  LibreOffice. A sheet without a page style of its own prints LibreOffice's default header and
+  footer, and `getHeaderFooter` says so.
 - **Not yet available:**
   Excel-style tables, conditional formats, comments, images and charts, and `writetable`'s
   `as_table` and `freeze_header`.

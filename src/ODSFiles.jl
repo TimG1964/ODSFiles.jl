@@ -91,6 +91,7 @@ include("write/sheetprops.jl")
 include("write/groups.jl")
 include("write/views.jl")
 include("write/protection.jl")
+include("write/printing.jl")
 include("write/save.jl")
 include("write/stream.jl")
 include("write/writetable.jl")
@@ -119,13 +120,16 @@ export
     setRowHidden, setColumnHidden, setSheetVisibility, setTabColor, removeTabColor,
     groupRows, groupColumns, ungroupRows, ungroupColumns,
     freezePanes, splitFreeze, splitPanes, removePanes, setSheetView,
-    protectSheet, unprotectSheet, setCellProtection, protectWorkbook, unprotectWorkbook
+    protectSheet, unprotectSheet, setCellProtection, protectWorkbook, unprotectWorkbook,
+    setPageSetup, setPageMargins, setPrintOptions, setPrintArea, removePrintArea, setPrintTitles, removePrintTitles,
+    setHeaderFooter, removeHeaderFooter, headerFooterField, headerFooterFont
 
 @static if VERSION >= v"1.11"
     eval(Meta.parse("public getcell, getcellrange, getFormula, get_dimension, ODSError, Cell, EmptyCell, DataTable, TableRow, TableRowIterator, SheetRow, StreamWriter, StreamSheet, " *
                     "getFont, getBorder, getFill, getAlignment, getFormat, getText, getDefaultFont, setOutsideBorder, CellFont, CellFill, CellBorder, CellAlignment, CellFormat, getColumnWidth, getRowHeight, getCellStyle, " *
                     "getDefinedNames, getAllDefinedNames, DefinedName, isRowHidden, isColumnHidden, getSheetVisibility, getTabColor, getRowOutlineLevel, getColumnOutlineLevel, getSheetView, " *
-                    "isSheetProtected, getSheetProtection, getCellProtection, isWorkbookProtected, getWorkbookProtection"))
+                    "isSheetProtected, getSheetProtection, getCellProtection, isWorkbookProtected, getWorkbookProtection, " *
+                    "getPageSetup, getPageMargins, getPrintOptions, getPrintArea, getPrintTitles, getHeaderFooter"))
 end
 
 include("precompile.jl")

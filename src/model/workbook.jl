@@ -40,6 +40,7 @@ mutable struct SheetProps
     display::Bool
     tabcolor::Union{Nothing,String}   # "#rrggbb"
     rtl::Bool                         # right to left (`style:writing-mode`, phase 5 step 8)
+    master::Union{Nothing,String}     # the master page its table style names (phase 5 step 10)
     base::Union{Nothing,String}
     style::Union{Nothing,String}
 end
@@ -66,6 +67,34 @@ mutable struct WorkbookProtection
     changed::Bool
 end
 
+
+# A sheet's page style and print range (phase 5 step 10), read on first use: its master page's
+# attributes and children, its page layout's properties (the page, the header's and the footer's)
+# and other children, Excel's six margins in inches (left, right, top, bottom, header, footer) as
+# LibreOffice's xlsx import maps them, and whether they changed.
+mutable struct PrintState
+    master::String                    # the master page the sheet uses now
+    mattrs::Vector{Pair{String,String}}   # the master page's other attributes
+    regions::Vector{Pair{String,String}}  # its children (header, header-left, …), tag => XML
+    lattrs::Vector{Pair{String,String}}   # the page layout's other attributes
+    lprops::Vector{Pair{String,String}}   # style:page-layout-properties
+    linner::String                    # its children
+    hprops::Vector{Pair{String,String}}   # the header's style:header-footer-properties
+    fprops::Vector{Pair{String,String}}   # the footer's
+    margins::Vector{Float64}
+    page_changed::Bool                # the page style changed (a new one is written)
+    margins_changed::Bool             # LibreOffice's margins are derived from `margins` again
+    area::Union{Nothing,String}       # table:print-ranges
+    area_changed::Bool
+end
+
+# The page styles ODSFiles derived (master page name => (master page XML, page layout XML)) and the
+# text styles of the headers and footers it wrote (name => XML) (phase 5 step 10).
+mutable struct PageEdits
+    pages::Dict{String,Tuple{String,String}}
+    text::Vector{Pair{String,String}}
+end
+PageEdits() = PageEdits(Dict{String,Tuple{String,String}}(), Pair{String,String}[])
 
 # The view settings set since the file was read (phase 5 step 8): per sheet (by the sheet, so that
 # they follow renames) and for the whole view; each item's (config:type, value), or `nothing` to remove it.
@@ -100,11 +129,12 @@ mutable struct Worksheet
     nameedits::NameEdits              # its local names deleted, and where they are (phase 5)
     props::Union{Nothing,SheetProps}  # visibility and tab colour, once read (phase 5)
     protection::Union{Nothing,SheetProtection}   # its protection, once read (phase 5 step 9)
+    print::Union{Nothing,PrintState}  # its page style and print range, once read (phase 5 step 10)
 end
 
 Worksheet(xf, name, index, entry, visible, store, localnames, lock) =
     Worksheet(xf, name, index, entry, visible, store, localnames, lock, Dict{Int,Vector{Int}}(), nothing, nothing, nothing, 0, false,
-              NameEdits(), nothing, nothing)
+              NameEdits(), nothing, nothing, nothing)
 
 # Whether the sheet was made by ODSFiles (so it is written whole), not read from the file.
 isnewsheet(ws::Worksheet) = ws.entry === nothing
@@ -138,14 +168,15 @@ mutable struct ODSFile
     tstyles::TableStyleEdits          # table styles ODSFiles derived (phase 5)
     views::ViewEdits                  # view settings set (phase 5)
     wbprotection::Union{Nothing,WorkbookProtection}   # the structure's protection, once read (phase 5 step 9)
+    pageedits::PageEdits              # page styles derived (phase 5 step 10)
 end
 
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, false, nothing,
-            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits(), nothing)
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits(), nothing, PageEdits())
 ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io) =
     ODSFile(source, container, content, version, styles, sheets, names, null_date, use_cache, writable, source_io,
-            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits(), nothing)
+            nothing, ReentrantLock(), Any[], Any[], Any[], Pair{String,String}[], NameEdits(), TableStyleEdits(), ViewEdits(), nothing, PageEdits())
 
 #
 # The sheet index is built as far as it is needed: `xf["Sheet1"]` or `xf[1]` finds the first

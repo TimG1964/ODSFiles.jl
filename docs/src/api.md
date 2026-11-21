@@ -168,6 +168,31 @@ setCellProtection
 getCellProtection
 ```
 
+## Printing
+
+Page setup, margins, print options, print areas and titles, headers and footers, kept in each
+sheet's page style as LibreOffice keeps them:
+
+```@docs
+setPageSetup
+getPageSetup
+setPageMargins
+getPageMargins
+setPrintOptions
+getPrintOptions
+setPrintArea
+getPrintArea
+removePrintArea
+setPrintTitles
+getPrintTitles
+removePrintTitles
+setHeaderFooter
+getHeaderFooter
+removeHeaderFooter
+headerFooterField
+headerFooterFont
+```
+
 ## Formatting
 
 Fonts, fills, borders and alignment:
