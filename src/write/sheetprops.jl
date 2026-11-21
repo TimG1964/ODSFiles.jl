@@ -119,8 +119,8 @@ end
 # The table style a sheet's text names.
 function _table_style_name(ws::Worksheet)
     ws.entry === nothing && return nothing
-    t = XML.sourcetext(ws.entry.node)
-    return _start_tag_attr(SubString(t, 1, _start_tag_end(t)), "table:style-name")
+    v = get(ws.entry.node, "table:style-name", nothing)       # the start tag only
+    return v === nothing ? nothing : String(v)
 end
 
 # The span of the automatic styles of a document (content.xml, or a flat document).

@@ -504,6 +504,18 @@ _names_xml(names) = join(_name_xml(dn) for dn in names)
 _names_edited(names::Union{Nothing,Vector{NameDef}}, ed::NameEdits) =
     !isempty(ed.removed) || (names !== nothing && any(dn -> isempty(dn.span), names))
 _names_edited(ws::Worksheet) = _names_edited(ws.localnames, ws.nameedits)
+
+# A sheet's name edits, with where new names go found if `_local_names` left it open (a sheet
+# without names, and nothing after them: before `</table:table>`).
+function _names_at!(ws::Worksheet)
+    ed = ws.nameedits
+    if ed.at == 0:-1 && ws.entry !== nothing && _names_edited(ws)
+        src = parent(XML.sourcetext(ws.entry.node))
+        at = findprev('<', src, last(XML.sourcespan(ws.entry.node)))
+        ed.at = at:at-1
+    end
+    return ed
+end
 _names_edited(xf::ODSFile) = _names_edited(xf.names, xf.nameedits)
 
 """

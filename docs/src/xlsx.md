@@ -95,7 +95,7 @@ The formatting functions work as in XLSX.jl too, with the differences listed in
   ODF has no category, content status, company or manager: they are the custom properties the import
   makes of them (`OOXMLCorePropertyCategory`, `OOXMLCorePropertyContentStatus`, `Company`,
   `Manager`), which `getCustomProperties` leaves out. Custom numbers are ODF's floats (a whole one
-  is read back as an `Int`), and custom properties are kept in name order, as LibreOffice keeps
+  is read back as an `Int64`), and custom properties are kept in name order, as LibreOffice keeps
   them. `getCustomProperties` gives a `Vector` of pairs, not an `OrderedDict`.
 - **Not yet available:**
   Excel-style tables, conditional formats, comments, images and charts, and `writetable`'s

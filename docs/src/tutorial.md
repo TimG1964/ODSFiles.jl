@@ -117,6 +117,26 @@ end
 Everything ODSFiles does not change — styles, column widths, comments, images, charts,
 settings — is kept exactly as it was ([Saving and writing](@ref)).
 
+## Changing sheets
+
+Rows, columns and sheets can be inserted, deleted, renamed, copied and moved, and the
+references to them follow, as in LibreOffice:
+
+```julia
+openods("budget.ods"; mode = "rw") do xf
+    s = xf["Costs"]
+    insertRows(s, 5; count = 3)            # =SUM(B2:B9) becomes =SUM(B2:B12)
+    renamesheet!(s, "Costs 2027")
+    copysheet!(s)                          # "Costs 2027 (copy)"
+    freezePanes(s; nrows = 1)
+    setPageSetup(s; orientation = :landscape, fitToWidth = 1)
+    setDocumentProperties(xf; title = "Budget 2027")
+end
+```
+
+[Sheets, names and settings](guide/sheets.md) covers these and the rest: defined names,
+hiding, groups, the view, protection, printing and document properties.
+
 ## Streaming a large file
 
 [`streamods`](@ref) writes rows as they are produced, in bounded memory:

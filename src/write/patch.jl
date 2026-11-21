@@ -594,7 +594,7 @@ function write_patched_table(out::_ChunkedIO, ws::Worksheet; display::Bool = tru
         _walk!(st, node, :table)
     end
     # the rest of the table, verbatim, with its names' edits (they follow the rows; phase 5)
-    for (a, b, rep) in _name_splices(ws.localnames, ws.nameedits, src)
+    for (a, b, rep) in _name_splices(ws.localnames, _names_at!(ws), src)
         _copy_to!(st, a)
         print(out, rep)
         b >= a && (st.pos = max(st.pos, nextind(src, b)))
@@ -698,7 +698,7 @@ function _write_sheet_now(out::_ChunkedIO, ws::Worksheet, rw::Union{Nothing,RefR
     put(x, y) = x > y ? nothing : srw === nothing ? print(out, SubString(src, x, y)) :
                                    rewrite_xml(out, srw, src, x, y; sheet = ws.entry.name)
     pos = e + 1
-    splices = _name_splices(ws.localnames, ws.nameedits, src)            # its names' edits (phase 5)
+    splices = _name_splices(ws.localnames, _names_at!(ws), src)          # its names' edits (phase 5)
     ps = _protection_splice(ws, e)                                       # its protection options (step 9)
     ps === nothing || pushfirst!(splices, (first(ps[1]), last(ps[1]), ps[2]))
     for (x, y, rep) in splices

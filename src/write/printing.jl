@@ -139,8 +139,8 @@ end
 
 function _print_area_now(ws::Worksheet)
     ws.entry === nothing && return nothing
-    t = XML.sourcetext(ws.entry.node)
-    return _start_tag_attr(SubString(t, 1, _start_tag_end(t)), "table:print-ranges")
+    v = get(ws.entry.node, "table:print-ranges", nothing)     # the start tag only
+    return v === nothing ? nothing : String(v)
 end
 
 #

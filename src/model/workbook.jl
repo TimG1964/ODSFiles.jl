@@ -421,10 +421,8 @@ function _local_names(ws::Worksheet)
             end
             XML.skip_element!(ch)
         end
-        if isempty(span) && at == 0
-            src = parent(XML.sourcetext(ws.entry.node))
-            at = findprev('<', src, last(XML.sourcespan(ws.entry.node)))     # `</table:table>`
-        end
+        # none and nothing after them: the table's end tag, found when a name is added
+        # (`_names_at!`; finding it here would scan the whole table again)
         ws.nameedits.at = isempty(span) ? (at:at-1) : span
         ws.localnames = found
         return found

@@ -209,7 +209,7 @@ function _custom_value(x::AbstractString)
     t = _elem_text(x)
     type == "boolean" && return lowercase(t) in ("true", "1")
     if type == "float"
-        occursin(r"^[+-]?\d+$", t) && (v = tryparse(Int, t); v === nothing || return v)
+        occursin(r"^[+-]?\d+$", t) && (v = tryparse(Int64, t); v === nothing || return v)
         return something(tryparse(Float64, t), t)
     end
     type == "date" && return something(_parse_meta_datetime(t), t)
@@ -244,7 +244,7 @@ end
 """
     getCustomProperties(xf) -> Vector{Pair{String,Any}}
 
-The file's custom document properties, in the file's order: `String`, `Int` (a whole `float`),
+The file's custom document properties, in the file's order: `String`, `Int64` (a whole `float`, on 32-bit Julia too),
 `Float64`, `Bool` or `DateTime` values, or the text for other types. The four that hold XLSX.jl's
 category, content status, company and manager are left out (they are
 [`getDocumentProperties`](@ref)'s). Works on read-only files.

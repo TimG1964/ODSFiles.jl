@@ -46,32 +46,32 @@ const _SHEET_PERMISSIONS = (
 const _PROT_ATTRS = ("table:protected", "table:protection-key", "table:protection-key-digest-algorithm",
                      "loext:protection-key-digest-algorithm-2")
 
+# A table's column and row elements (and their containers): the protection options come before them.
+const _TABLE_LINES = ("table:table-column", "table:table-columns", "table:table-column-group", "table:table-header-columns",
+                      "table:table-row", "table:table-rows", "table:table-row-group", "table:table-header-rows")
+
 function _sheet_protection(ws::Worksheet)
     ws.protection === nothing || return ws.protection
     attrs = Dict{String,String}(); options = nothing; child = 0:-1
     if ws.entry !== nothing
-        t = XML.sourcetext(ws.entry.node)
-        tag = SubString(t, 1, _start_tag_end(t))
-        for k in _PROT_ATTRS
-            v = _start_tag_attr(tag, k)
-            v === nothing || (attrs[k] = v)
+        for k in _PROT_ATTRS                       # the start tag only (not the whole table's text)
+            v = get(ws.entry.node, k, nothing)
+            v === nothing || (attrs[k] = String(v))
         end
-        # its options: a direct child before the columns and rows (LibreOffice writes it first)
-        c = XML.Cursor(ws.entry.node)
-        XML.next!(c)
-        XML.for_each_child!(c) do ch
-            XML.nodetype(ch) === XML.Element || return
-            tg = XML.tag(ch)
-            if child == 0:-1 && options === nothing && (tg == "loext:table-protection" || tg == "table:table-protection")
-                ln = XML.LazyNode(ch)
+        # its options: a direct child before the columns and rows (LibreOffice writes it first),
+        # so the walk stops at the first of those
+        for ln in XML.eachelement(ws.entry.node)
+            tg = XML.tag(ln)
+            if tg == "loext:table-protection" || tg == "table:table-protection"
                 child = XML.sourcespan(ln)
                 text = SubString(parent(XML.sourcetext(ln)), first(child), last(child))
                 options = Dict{String,String}()
                 for (k, v) in _raw_attrs(SubString(text, 1, _start_tag_end(text)))
                     options[k] = XML.unescape(String(SubString(v, 2, lastindex(v) - 1)))
                 end
+                break
             end
-            XML.skip_element!(ch)
+            tg in _TABLE_LINES && break
         end
     end
     ws.protection = SheetProtection(attrs, options, child, false)

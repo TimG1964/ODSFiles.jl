@@ -37,7 +37,7 @@ const DOCP_CUSTOM = ["Big" => 5_000_000_000, "Day" => DateTime(2026, 3, 4), "Int
     im = readods(DOCP_IMPORT)
     @test getDocumentProperties(im) == DOCP_EXPECTED
     @test getCustomProperties(im) == vcat(["AppVersion" => "16.0300"], DOCP_CUSTOM)   # the import's AppVersion is kept
-    @test getCustomProperty(im, "int") === 42 && getCustomProperty(im, "BIG") === 5_000_000_000   # names ignore case
+    @test getCustomProperty(im, "int") === Int64(42) && getCustomProperty(im, "BIG") === Int64(5_000_000_000)   # names ignore case
     @test getCustomProperty(im, "Real") === 2.5 && getCustomProperty(im, "Missing") === nothing
     @test getCustomProperty(im, "Company") === nothing                    # a document property here
     own = readods(DOCP_OWN)
